@@ -5,7 +5,7 @@ DDL Script: Create Bronze Tables
 Script Purpose:
     This script creates tables in the 'bronze' schema, dropping existing tables 
     if they already exist.
-	  Run this script to re-define the DDL structure of 'bronze' Tables
+	Run this script to re-define the DDL structure of 'bronze' Tables
 ===============================================================================
 */
 
@@ -48,7 +48,7 @@ CREATE TABLE bronze.olist_ord_item (
     oi_ord_id           NVARCHAR(MAX),
     oi_ord_item_id      NVARCHAR(MAX),
     oi_prd_id           NVARCHAR(MAX),
-    oi_seller_id        NVARCHAR(MAX),
+    oi_sel_id        NVARCHAR(MAX),
     oi_ship_limit_dt    NVARCHAR(MAX),
     oi_price            NVARCHAR(MAX),
     oi_freight_val      NVARCHAR(MAX)
@@ -79,7 +79,7 @@ CREATE TABLE bronze.olist_ord_rev (
     or_rev_id           NVARCHAR(MAX),
     or_ord_id           NVARCHAR(MAX),
     or_rev_score        NVARCHAR(MAX),
-    or_rev_cmt_titile   NVARCHAR(MAX),
+    or_rev_cmt_title   NVARCHAR(MAX),
     or_rev_cmt_msg      NVARCHAR(MAX),
     or_rev_create_dt    NVARCHAR(MAX),
     or_rev_ans_ts       NVARCHAR(MAX)

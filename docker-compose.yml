@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  sql-server:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: olist_dw_sql
+    ports:
+      - "${DB_PORT}:1433" 
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${DB_PASS} 
+      - MSSQL_PID=Developer
+    volumes:
+      - sql_data:/var/opt/mssql 
+    restart: always
+
+volumes:
+  sql_data:

@@ -1,0 +1,17 @@
+# --- Database Configuration ---
+# The hostname or IP address of the SQL Server (e.g., localhost or 127.0.0.1)
+DB_SERVER=localhost
+
+# The port mapped in docker-compose.yml (default is 1433)
+DB_PORT=1433
+
+# The name of  Data Warehouse database
+DB_NAME=RetailWarehouse
+
+# Database credentials 
+DB_USER=sa
+DB_PASS=password_here
+
+# --- Driver Configuration (Optional) ---
+# The ODBC Driver version installed on your machine
+DB_DRIVER=ODBC Driver 17 for SQL Server
