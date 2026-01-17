@@ -28,16 +28,3 @@ Names remain aligned with the source system for consistency, but the data is cle
 <entity>: Cleaned version of the entity name.
 
 Example: olist_cust → Cleaned and standardized customer information in the silver layer.
-### **Bronze Rules**
-- All names must start with the source system name, and table names must match their original names without renaming.
-- **`<sourcesystem>_<entity>`**  
-  - `<sourcesystem>`: Name of the source system (e.g., `crm`, `erp`).  
-  - `<entity>`: Exact table name from the source system.  
-  - Example: `crm_customer_info` → Customer information from the CRM system.
-
-### **Silver Rules**
-- All names must start with the source system name, and table names must match their original names without renaming.
-- **`<sourcesystem>_<entity>`**  
-  - `<sourcesystem>`: Name of the source system (e.g., `crm`, `erp`).  
-  - `<entity>`: Exact table name from the source system.  
-  - Example: `crm_customer_info` → Customer information from the CRM system.
