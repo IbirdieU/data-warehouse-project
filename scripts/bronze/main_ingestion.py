@@ -146,7 +146,7 @@ def ingest_data(source_path):
             table_start = time.time()
             print(f"Reading {file_name}...")
             # Read CSV
-            df = pd.read_csv(file_path,dtype={'geolocation_lat': str, 'geolocation_lng': str})
+            df = pd.read_csv(file_path,dtype = str)
             
             # Rename columns based on our mapping
             df = df.rename(columns=config["mapping"])

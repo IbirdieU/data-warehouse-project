@@ -17,11 +17,12 @@ IF OBJECT_ID('silver.olist_cust', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_cust (
-    cst_cust_id         NVARCHAR(50),
-    cst_cust_unique_id  NVARCHAR(50),
-    cst_zip_code_prefix INT,
-    cst_city            NVARCHAR(100),
-    cst_state           NVARCHAR(10),
+    cst_cust_id         VARCHAR(50) NOT NULL,  -- PRIMARY KEY
+    cst_cust_unique_id  VARCHAR(50),
+    cst_zip_code_prefix CHAR(5),
+    cst_city_raw        NVARCHAR(100),
+    cst_city_std        NVARCHAR(100),
+    cst_state           CHAR(2),
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
 
     CONSTRAINT PK_olist_cust PRIMARY KEY (cst_cust_id)
@@ -34,31 +35,35 @@ IF OBJECT_ID('silver.olist_geo', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_geo (
-    geo_zip_code_prefix INT,
+    geo_zip_code_prefix CHAR(5) NOT NULL, -- PRIMARY KEY
     geo_lat             DECIMAL(18,15),
     geo_lng             DECIMAL(18,15),
     geo_city            NVARCHAR(100),
-    geo_state           NVARCHAR(50),
+    geo_state           CHAR(2),
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
+
+    CONSTRAINT PK_olist_geo PRIMARY KEY (geo_zip_code_prefix)
 );
 GO
 
--- 3.order items--
+-- 3.order items
 IF OBJECT_ID('silver.olist_ord_item', 'U') IS NOT NULL
     DROP TABLE silver.olist_ord_item;
 GO
 
 CREATE TABLE silver.olist_ord_item (
-    oi_ord_id           NVARCHAR(50),
-    oi_ord_item_id      INT,
-    oi_prd_id           NVARCHAR(50),
-    oi_sel_id           NVARCHAR(50),
+    oi_ord_id           VARCHAR(50) NOT NULL,      -- COMPOSITE KEY (part 1)
+    oi_ord_item_id      INT NOT NULL,              -- COMPOSITE KEY (part 2)
+    oi_prd_id           VARCHAR(50),
+    oi_sel_id           VARCHAR(50),
     oi_ship_limit_dt    DATETIME,
     oi_price            DECIMAL(18,2),
     oi_freight_val      DECIMAL(18,2),
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
 
-    CONSTRAINT PK_olist_ord_item PRIMARY KEY (oi_ord_id, oi_ord_item_id)
+    CONSTRAINT PK_olist_ord_item PRIMARY KEY (oi_ord_id, oi_ord_item_id),
+    CONSTRAINT CHK_ord_item_price CHECK (oi_price >= 0),
+    CONSTRAINT CHK_ord_item_freight CHECK (oi_freight_val >= 0)
 );
 GO
 
@@ -68,14 +73,15 @@ IF OBJECT_ID('silver.olist_ord_pay', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_ord_pay (
-    op_ord_id           NVARCHAR(50),
-    op_pay_seq          INT,
+    op_ord_id           VARCHAR(50) NOT NULL,      -- COMPOSITE KEY (part 1)
+    op_pay_seq          INT NOT NULL,              -- COMPOSITE KEY (part 2)
     op_pay_type         NVARCHAR(50),
     op_pay_inst         INT,
     op_pay_val          DECIMAL(18,2),
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
 
-    CONSTRAINT PK_olist_ord_pay PRIMARY KEY (op_ord_id,op_pay_seq)
+    CONSTRAINT PK_olist_ord_pay PRIMARY KEY (op_ord_id, op_pay_seq),
+    CONSTRAINT CHK_ord_pay_val CHECK (op_pay_val >= 0)
 );
 GO
 
@@ -85,16 +91,17 @@ IF OBJECT_ID('silver.olist_ord_rev', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_ord_rev (
-    or_rev_id           NVARCHAR(50),
-    or_ord_id           NVARCHAR(50),
+    or_rev_id           VARCHAR(50) NOT NULL,  -- PRIMARY KEY
+    or_ord_id           VARCHAR(50),
     or_rev_score        INT,
-    or_rev_cmt_title    NVARCHAR(MAX),
+    or_rev_cmt_title    NVARCHAR(200),
     or_rev_cmt_msg      NVARCHAR(MAX),
     or_rev_create_dt    DATETIME,
     or_rev_ans_ts       DATETIME,
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
 
-    CONSTRAINT PK_olist_ord_rev PRIMARY KEY (or_rev_id)
+    CONSTRAINT PK_olist_ord_rev PRIMARY KEY (or_rev_id),
+    CONSTRAINT CHK_ord_rev_score CHECK (or_rev_score BETWEEN 1 AND 5)
 );
 GO
 
@@ -104,14 +111,15 @@ IF OBJECT_ID('silver.olist_ord', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_ord (
-    ord_ord_id          NVARCHAR(50),
-    ord_cust_id         NVARCHAR(50),
+    ord_ord_id          VARCHAR(50) NOT NULL,  -- PRIMARY KEY
+    ord_cust_id         VARCHAR(50),
     ord_status          NVARCHAR(20),
     ord_purchase_ts     DATETIME,
     ord_approved_ts     DATETIME,
     ord_del_carrier_dt  DATETIME,
     ord_del_cust_dt     DATETIME,
     ord_est_del_dt      DATETIME,
+    ord_is_late         BIT,                   -- Flag: 1=Late, 0=On Time (Derived column)
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
 
     CONSTRAINT PK_olist_ord PRIMARY KEY (ord_ord_id)
@@ -124,7 +132,7 @@ IF OBJECT_ID('silver.olist_prd', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_prd (
-    prd_prd_id          NVARCHAR(50),
+    prd_prd_id          VARCHAR(50) NOT NULL,  -- PRIMARY KEY
     prd_cat_name        NVARCHAR(50),
     prd_name_len        INT,
     prd_desc_len        INT,
@@ -135,7 +143,11 @@ CREATE TABLE silver.olist_prd (
     prd_width_cm        INT,
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
 
-    CONSTRAINT PK_olist_prd PRIMARY KEY (prd_prd_id)
+    CONSTRAINT PK_olist_prd PRIMARY KEY (prd_prd_id),
+    CONSTRAINT CHK_prd_weight CHECK (prd_weight_g >= 0),
+    CONSTRAINT CHK_prd_len CHECK (prd_len_cm >= 0),
+    CONSTRAINT CHK_prd_height CHECK (prd_height_cm >= 0),
+    CONSTRAINT CHK_prd_width CHECK (prd_width_cm >= 0)
 );
 GO
 
@@ -145,10 +157,11 @@ IF OBJECT_ID('silver.olist_sel', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_sel (
-    sel_sel_id          NVARCHAR(50),
-    sel_zip_code_prefix INT,
-    sel_city            NVARCHAR(100),
-    sel_state           NVARCHAR(10),
+    sel_sel_id          VARCHAR(50) NOT NULL,  -- PRIMARY KEY
+    sel_zip_code_prefix CHAR(5),
+    sel_city_raw        NVARCHAR(100),
+    sel_city_std        NVARCHAR(100),
+    sel_state           CHAR(2),
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
 
     CONSTRAINT PK_olist_sel PRIMARY KEY (sel_sel_id)
@@ -161,9 +174,29 @@ IF OBJECT_ID('silver.olist_prd_cat_map', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_prd_cat_map (
-    pcm_cat_name        NVARCHAR(100),
-    pcm_cat_name_en     NVARCHAR(100),
-    dwh_create_date     DATETIME2 DEFAULT GETDATE()
+    pcm_cat_name    NVARCHAR(255) NOT NULL, -- PRIMARY KEY
+    pcm_cat_name_en NVARCHAR(255) NOT NULL, 
+    
+    CONSTRAINT PK_olist_prd_cat_map PRIMARY KEY (pcm_cat_name)
+);
+GO
+
+-- 10. load log
+IF OBJECT_ID('silver.load_log', 'U') IS NOT NULL
+    DROP TABLE silver.load_log;
+GO
+
+CREATE TABLE silver.load_log (
+    log_id          INT IDENTITY(1,1)   NOT NULL,
+    batch_id        UNIQUEIDENTIFIER    NOT NULL,   
+    table_name      NVARCHAR(100)       NOT NULL,
+    rows_inserted   INT                 NOT NULL,
+    load_duration_s DECIMAL(6,2)        NOT NULL,
+    load_status     NVARCHAR(10)        NOT NULL,   -- 'SUCCESS' / 'FAILED'
+    error_message   NVARCHAR(MAX)       NULL,
+    dwh_create_date DATETIME2           DEFAULT GETDATE()
+
+    CONSTRAINT PK_load_log PRIMARY KEY (log_id)
 );
 GO
 
