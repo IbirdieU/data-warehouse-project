@@ -70,7 +70,7 @@ BEGIN
         -- Standardize to English (Remove Accents) + Ghost String Cleanup
         CAST(TRANSLATE(NULLIF(TRIM(winner.geo_city), ''), 
             'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ', 
-            'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC') AS VARCHAR(255)) as geo_city,
+            'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC') AS VARCHAR(100)) as geo_city,
         winner.geo_state
     FROM CTE_GeoCoordinates coord
     INNER JOIN CTE_CityWinner winner ON coord.geo_zip_code_prefix = winner.geo_zip_code_prefix;
@@ -100,9 +100,9 @@ BEGIN
         -- Fixed-Length: Zip codes as CHAR(5)
         CAST(bc.cst_zip_code_prefix AS CHAR(5)),
         -- Ghost Strings: NULLIF + TRIM on raw city name
-        CAST(NULLIF(TRIM(bc.cst_city), '') AS VARCHAR(255)) AS cst_city_raw,
+        CAST(NULLIF(TRIM(bc.cst_city), '') AS VARCHAR(100)) AS cst_city_raw,
         -- Standardization Logic: Use geo as source of truth, fallback to original
-        CAST(NULLIF(TRIM(COALESCE(sg.geo_city, bc.cst_city)), '') AS VARCHAR(255)) AS cst_city_std,
+        CAST(NULLIF(TRIM(COALESCE(sg.geo_city, bc.cst_city)), '') AS VARCHAR(100)) AS cst_city_std,
         -- Fixed-Length: States as CHAR(2)
         CAST(COALESCE(sg.geo_state, bc.cst_state) AS CHAR(2)) AS cst_state
 
@@ -163,7 +163,7 @@ BEGIN
         CAST(op_ord_id AS VARCHAR(50)), 
         CAST(op_pay_seq AS INT),
         -- Ghost Strings: Text cleanup
-        CAST(NULLIF(TRIM(op_pay_type), '') AS VARCHAR(255)), 
+        CAST(NULLIF(TRIM(op_pay_type), '') AS VARCHAR(100)), 
         -- Safe Measures: Numeric cast
         CAST(op_pay_inst AS INT), 
         CAST(op_pay_val AS DECIMAL(18,2)) 
@@ -196,7 +196,7 @@ BEGIN
         -- Safe Measures: Numeric cast
         CAST(or_rev_score AS INT), 
         -- Ghost Strings: Text cleanup for title
-        CAST(NULLIF(TRIM(or_rev_cmt_title), '') AS VARCHAR(255)), 
+        CAST(NULLIF(TRIM(or_rev_cmt_title), '') AS VARCHAR(100)), 
         -- Ghost Strings: Text cleanup for message (large text)
         CAST(NULLIF(TRIM(or_rev_cmt_msg), '') AS VARCHAR(MAX)),
         -- Safe Measures: Datetime cast
@@ -242,7 +242,7 @@ BEGIN
         CAST(ord_ord_id AS VARCHAR(50)), 
         CAST(ord_cust_id AS VARCHAR(50)), 
         -- Ghost Strings: Status text cleanup
-        CAST(NULLIF(TRIM(ord_status), '') AS VARCHAR(255)), 
+        CAST(NULLIF(TRIM(ord_status), '') AS NVARCHAR(20)), 
         -- Safe Measures: Datetime casts
         CAST(ord_purchase_ts AS DATETIME), 
         CAST(ord_approved_ts AS DATETIME), 
@@ -256,7 +256,12 @@ BEGIN
             THEN 1  
             ELSE 0
         END AS ord_is_late
-    FROM bronze.olist_ord;
+    FROM bronze.olist_ord
+    -- Validation: Filter out unrecognized order statuses
+    WHERE NULLIF(TRIM(ord_status), '') IN (
+        'delivered', 'shipped', 'unavailable', 'canceled',
+        'invoiced', 'approved', 'processing', 'created'
+    );
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
@@ -280,7 +285,7 @@ BEGIN
         -- Fail-Fast: IDs as VARCHAR(50)
         CAST(prd_prd_id AS VARCHAR(50)), 
         -- Ghost Strings: Category name cleanup
-        CAST(NULLIF(TRIM(prd_cat_name), '') AS VARCHAR(255)), 
+        CAST(NULLIF(TRIM(prd_cat_name), '') AS VARCHAR(100)), 
         -- Safe Measures: Numeric casts
         CAST(prd_name_len AS INT), 
         CAST(prd_desc_len AS INT), 
@@ -315,9 +320,9 @@ BEGIN
         -- Fixed-Length: Zip codes as CHAR(5)
         CAST(bs.sel_zip_code_prefix AS CHAR(5)),
         -- Ghost Strings: Raw city cleanup
-        CAST(NULLIF(TRIM(bs.sel_city), '') AS VARCHAR(255)),                          
+        CAST(NULLIF(TRIM(bs.sel_city), '') AS VARCHAR(100)),                          
         -- Standardization Logic: Use geo as source of truth, fallback to original
-        CAST(NULLIF(TRIM(COALESCE(sg.geo_city, bs.sel_city)), '') AS VARCHAR(255)) AS sel_city_std,
+        CAST(NULLIF(TRIM(COALESCE(sg.geo_city, bs.sel_city)), '') AS VARCHAR(100)) AS sel_city_std,
         -- Fixed-Length: States as CHAR(2)
         CAST(COALESCE(sg.geo_state, bs.sel_state) AS CHAR(2)) AS sel_state
 
@@ -344,8 +349,8 @@ BEGIN
     INSERT INTO silver.olist_prd_cat_map (pcm_cat_name, pcm_cat_name_en)
     SELECT 
         -- Ghost Strings: Text cleanup for both category names
-        CAST(NULLIF(TRIM(pcm_cat_name), '') AS VARCHAR(255)), 
-        CAST(NULLIF(TRIM(pcm_cat_name_en), '') AS VARCHAR(255)) 
+        CAST(NULLIF(TRIM(pcm_cat_name), '') AS VARCHAR(100)), 
+        CAST(NULLIF(TRIM(pcm_cat_name_en), '') AS VARCHAR(100)) 
     FROM bronze.olist_prd_cat_map;
 
     SET @rows_inserted = @@ROWCOUNT;

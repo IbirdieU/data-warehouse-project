@@ -174,8 +174,8 @@ IF OBJECT_ID('silver.olist_prd_cat_map', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_prd_cat_map (
-    pcm_cat_name    NVARCHAR(255) NOT NULL, -- PRIMARY KEY
-    pcm_cat_name_en NVARCHAR(255) NOT NULL, 
+    pcm_cat_name    NVARCHAR(100) NOT NULL, -- PRIMARY KEY
+    pcm_cat_name_en NVARCHAR(100) NOT NULL, 
     
     CONSTRAINT PK_olist_prd_cat_map PRIMARY KEY (pcm_cat_name)
 );

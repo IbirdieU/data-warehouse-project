@@ -23,8 +23,8 @@ WITH DQ_Report AS (
 
     -- Check 1.2: Uniqueness on Primary Key (cst_cust_id)
     SELECT 'silver.olist_cust', 'Uniqueness - PK cst_cust_id',
-        COUNT(cst_cust_id) - COUNT(DISTINCT cst_cust_id),
-        CASE WHEN COUNT(cst_cust_id) - COUNT(DISTINCT cst_cust_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        COUNT(*) - COUNT(DISTINCT cst_cust_id),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT cst_cust_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
         'Duplicate primary keys found'
     FROM silver.olist_cust
 
@@ -68,13 +68,11 @@ WITH DQ_Report AS (
     FROM silver.olist_cust
 
     UNION ALL
-
-    -- Check 1.7: Integrity - Referential check to silver.olist_geo
-    -- Every customer zip should ideally exist in Master Geolocation table
-    SELECT 'silver.olist_cust', 'Integrity - Customer Zip Reference',
+    -- Check 1.7: Integrity (cst_zip_code_prefix should exist in silver.olist_geo)
+    SELECT 'silver.olist_cust', 'Integrity - Customer Zip Reference (cst_zip_code_prefix)',
         COUNT(c.cst_cust_id),
         CASE WHEN COUNT(c.cst_cust_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
-        'Customer zip prefix not found in silver.olist_geo'
+        'Customer zip prefix not found in olist_geo'
     FROM silver.olist_cust c
     LEFT JOIN silver.olist_geo g ON c.cst_zip_code_prefix = g.geo_zip_code_prefix
     WHERE g.geo_zip_code_prefix IS NULL
@@ -114,8 +112,8 @@ WITH DQ_Report AS (
 
     -- Check 2.4: Uniqueness (Each Zip Prefix must be UNIQUE - The 1 Zip = 1 Row Rule)
     SELECT 'silver.olist_geo', 'Uniqueness - PK geo_zip_code_prefix',
-        COUNT(geo_zip_code_prefix) - COUNT(DISTINCT geo_zip_code_prefix),
-        CASE WHEN COUNT(geo_zip_code_prefix) - COUNT(DISTINCT geo_zip_code_prefix) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        COUNT(*) - COUNT(DISTINCT geo_zip_code_prefix),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT geo_zip_code_prefix) > 0 THEN 'FAIL' ELSE 'PASS' END,
         'Duplicate zip codes found in master geo table'
     FROM silver.olist_geo
 
@@ -157,18 +155,15 @@ WITH DQ_Report AS (
 
     -- Check 3.2: Uniqueness on Composite Key (oi_ord_id + oi_ord_item_id)
     SELECT 'silver.olist_ord_item', 'Uniqueness - Composite PK (oi_ord_id + oi_ord_item_id)',
-        (SELECT COUNT(*) FROM silver.olist_ord_item) 
-        - (SELECT COUNT(*) FROM (SELECT DISTINCT oi_ord_id, oi_ord_item_id FROM silver.olist_ord_item) t),
-        CASE WHEN (SELECT COUNT(*) FROM silver.olist_ord_item) 
-             - (SELECT COUNT(*) FROM (SELECT DISTINCT oi_ord_id, oi_ord_item_id FROM silver.olist_ord_item) t) > 0 
+        COUNT(*) - COUNT(DISTINCT CONCAT(oi_ord_id, '|', oi_ord_item_id)),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT CONCAT(oi_ord_id, '|', oi_ord_item_id)) > 0 
              THEN 'FAIL' ELSE 'PASS' END,
-        'Duplicate primary keys found'
+        'Duplicate composite primary keys found'
     FROM silver.olist_ord_item
-    WHERE 1 = 0
 
     UNION ALL
 
-    -- Check 3.3: Referential Integrity (oi_ord_id should exist in silver.olist_ord)
+    -- Check 3.3: Integrity (oi_ord_id should exist in silver.olist_ord)
     SELECT 'silver.olist_ord_item', 'Integrity - Order Reference (oi_ord_id)',
         COUNT(oi.oi_ord_id),
         CASE WHEN COUNT(oi.oi_ord_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
@@ -179,7 +174,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 3.4: Referential Integrity (oi_prd_id should exist in silver.olist_prd)
+    -- Check 3.4: Integrity (oi_prd_id should exist in silver.olist_prd)
     SELECT 'silver.olist_ord_item', 'Integrity - Product Reference (oi_prd_id)',
         COUNT(oi.oi_prd_id),
         CASE WHEN COUNT(oi.oi_prd_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
@@ -190,7 +185,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 3.5: Referential Integrity (oi_sel_id should exist in silver.olist_sel)
+    -- Check 3.5: Integrity (oi_sel_id should exist in silver.olist_sel)
     SELECT 'silver.olist_ord_item', 'Integrity - Seller Reference (oi_sel_id)',
         COUNT(oi.oi_sel_id),
         CASE WHEN COUNT(oi.oi_sel_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
@@ -234,18 +229,15 @@ WITH DQ_Report AS (
 
     -- Check 4.2: Uniqueness on Composite Key (op_ord_id + op_pay_seq)
     SELECT 'silver.olist_ord_pay', 'Uniqueness - Composite PK (op_ord_id + op_pay_seq)',
-        (SELECT COUNT(*) FROM silver.olist_ord_pay) 
-        - (SELECT COUNT(*) FROM (SELECT DISTINCT op_ord_id, op_pay_seq FROM silver.olist_ord_pay) t),
-        CASE WHEN (SELECT COUNT(*) FROM silver.olist_ord_pay) 
-             - (SELECT COUNT(*) FROM (SELECT DISTINCT op_ord_id, op_pay_seq FROM silver.olist_ord_pay) t) > 0 
+        COUNT(*) - COUNT(DISTINCT CONCAT(op_ord_id, '|', op_pay_seq)),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT CONCAT(op_ord_id, '|', op_pay_seq)) > 0 
              THEN 'FAIL' ELSE 'PASS' END,
-        'Duplicate composite keys found'
+        'Duplicate composite primary keys found'
     FROM silver.olist_ord_pay
-    WHERE 1 = 0
 
     UNION ALL
 
-    -- Check 4.3: Referential Integrity (op_ord_id should exist in silver.olist_ord)
+    -- Check 4.3: Integrity (op_ord_id should exist in silver.olist_ord)
     SELECT 'silver.olist_ord_pay', 'Integrity - Order Reference (op_ord_id)',
         COUNT(op.op_ord_id),
         CASE WHEN COUNT(op.op_ord_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
@@ -275,6 +267,16 @@ WITH DQ_Report AS (
 
     UNION ALL
 
+    -- Check 4.6: Validity - Allowed Payment Types
+     SELECT 'silver.olist_ord_pay', 'Validity - Payment Type Domain',
+         SUM(CASE WHEN op_pay_type NOT IN ('credit_card', 'boleto', 'voucher', 'debit_card', 'not_defined') THEN 1 ELSE 0 END),
+         CASE WHEN SUM(CASE WHEN op_pay_type NOT IN ('credit_card', 'boleto', 'voucher', 'debit_card', 'not_defined') THEN 1 ELSE 0 END) > 0 
+              THEN 'WARNING' ELSE 'PASS' END,
+         'Found unexpected payment types'
+     FROM silver.olist_ord_pay
+
+     UNION ALL
+
     -- ====================================================================
     -- 5. silver.olist_ord_rev (Reviews)
     -- ====================================================================
@@ -290,14 +292,14 @@ WITH DQ_Report AS (
 
     -- Check 5.2: Uniqueness on Primary Key (or_rev_id)
     SELECT 'silver.olist_ord_rev', 'Uniqueness - PK or_rev_id',
-        COUNT(or_rev_id) - COUNT(DISTINCT or_rev_id),
-        CASE WHEN COUNT(or_rev_id) - COUNT(DISTINCT or_rev_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        COUNT(*) - COUNT(DISTINCT or_rev_id),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT or_rev_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
         'Duplicate primary keys found'
     FROM silver.olist_ord_rev
 
     UNION ALL
 
-    -- Check 5.3: Referential Integrity (or_ord_id should exist in silver.olist_ord)
+    -- Check 5.3: Integrity (or_ord_id should exist in silver.olist_ord)
     SELECT 'silver.olist_ord_rev', 'Integrity - Order Reference (or_ord_id)',
         COUNT(r.or_ord_id),
         CASE WHEN COUNT(r.or_ord_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
@@ -360,7 +362,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 6.3: Referential Integrity (ord_cust_id should exist in silver.olist_cust)
+    -- Check 6.3: Integrity (ord_cust_id should exist in silver.olist_cust)
     SELECT 'silver.olist_ord', 'Integrity - Customer Reference (ord_cust_id)',
         COUNT(o.ord_cust_id),
         CASE WHEN COUNT(o.ord_cust_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
@@ -405,6 +407,46 @@ WITH DQ_Report AS (
 
     UNION ALL
 
+    -- Check 6.7: Integrity - Order Item Reference (ord_ord_id should exist in olist_ord_item)
+    SELECT 'silver.olist_ord', 'Integrity - Order Item Reference (ord_ord_id)',
+        COUNT(o.ord_ord_id),
+        CASE WHEN COUNT(o.ord_ord_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
+        'Order ID in olist_ord not found in olist_ord_item'
+    FROM silver.olist_ord o
+    LEFT JOIN silver.olist_ord_item oi ON o.ord_ord_id = oi.oi_ord_id
+    WHERE oi.oi_ord_id IS NULL
+
+    UNION ALL
+
+    -- Check 6.8: Integrity - Order Payment Reference (ord_ord_id should exist in olist_ord_pay)
+    SELECT 'silver.olist_ord', 'Integrity - Order Payment Reference (ord_ord_id)',
+        COUNT(o.ord_ord_id),
+        CASE WHEN COUNT(o.ord_ord_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
+        'Order ID in olist_ord not found in olist_ord_pay'
+    FROM silver.olist_ord o
+    LEFT JOIN silver.olist_ord_pay op ON o.ord_ord_id = op.op_ord_id
+    WHERE op.op_ord_id IS NULL
+
+    UNION ALL
+
+    -- Check 6.9: Validity - Allowed Order Statuses
+    SELECT 
+        'silver.olist_ord', 'Validity - Order Status Domain',
+        SUM(CASE 
+            WHEN ord_status NOT IN ('delivered', 'shipped', 'unavailable', 'canceled', 'invoiced', 'approved', 'processing', 'created') 
+            THEN 1 ELSE 0 END),
+        CASE 
+            WHEN SUM(CASE 
+                WHEN ord_status NOT IN ('delivered', 'shipped', 'unavailable', 'canceled', 'invoiced', 'approved', 'processing', 'created') 
+                THEN 1 ELSE 0 END) > 0 
+            THEN 'WARNING' 
+            ELSE 'PASS' 
+        END,
+        'Found unexpected order statuses'
+    FROM silver.olist_ord
+
+    UNION ALL
+
     -- ====================================================================
     -- 7. silver.olist_prd (Products)
     -- ====================================================================
@@ -420,8 +462,8 @@ WITH DQ_Report AS (
 
     -- Check 7.2: Uniqueness on Primary Key (prd_prd_id)
     SELECT 'silver.olist_prd', 'Uniqueness - PK prd_prd_id',
-        COUNT(prd_prd_id) - COUNT(DISTINCT prd_prd_id),
-        CASE WHEN COUNT(prd_prd_id) - COUNT(DISTINCT prd_prd_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        COUNT(*) - COUNT(DISTINCT prd_prd_id),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT prd_prd_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
         'Duplicate primary keys found'
     FROM silver.olist_prd
 
@@ -464,11 +506,11 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 7.6: Referential Integrity - Product Category (prd_cat_name should exist in mapping)
-    SELECT 'silver.olist_prd', 'Integrity - Product Category Reference',
+    -- Check 7.6: Integrity - Product Category (prd_cat_name should exist in mapping)
+    SELECT 'silver.olist_prd', 'Integrity - Product Category Reference (prd_cat_name)',
         COUNT(p.prd_prd_id),
         CASE WHEN COUNT(p.prd_prd_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
-        'Product category not found in category mapping'
+        'Product category not found in olist.prd_cat_map'
     FROM silver.olist_prd p
     LEFT JOIN silver.olist_prd_cat_map cm ON p.prd_cat_name = cm.pcm_cat_name
     WHERE p.prd_cat_name IS NOT NULL AND cm.pcm_cat_name IS NULL
@@ -490,8 +532,8 @@ WITH DQ_Report AS (
 
     -- Check 8.2: Uniqueness on Primary Key (sel_sel_id)
     SELECT 'silver.olist_sel', 'Uniqueness - PK sel_sel_id',
-        COUNT(sel_sel_id) - COUNT(DISTINCT sel_sel_id),
-        CASE WHEN COUNT(sel_sel_id) - COUNT(DISTINCT sel_sel_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        COUNT(*) - COUNT(DISTINCT sel_sel_id),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT sel_sel_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
         'Duplicate primary keys found'
     FROM silver.olist_sel
 
@@ -507,10 +549,10 @@ WITH DQ_Report AS (
     UNION ALL
 
     -- Check 8.4: Integrity - Seller Zip not found in Geolocation (Warning only)
-    SELECT 'silver.olist_sel', 'Integrity - Seller Zip Reference',
+    SELECT 'silver.olist_sel', 'Integrity - Seller Zip Reference (sel_zip_code_prefix)',
         COUNT(s.sel_sel_id),
         CASE WHEN COUNT(s.sel_sel_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
-        'Seller zip prefix not found in silver.olist_geo'
+        'Seller zip prefix not found in olist_geo'
     FROM silver.olist_sel s
     LEFT JOIN silver.olist_geo g ON s.sel_zip_code_prefix = g.geo_zip_code_prefix
     WHERE g.geo_zip_code_prefix IS NULL
@@ -558,8 +600,8 @@ WITH DQ_Report AS (
 
     -- Check 9.3: Uniqueness on Primary Key (pcm_cat_name must be unique)
     SELECT 'silver.olist_prd_cat_map', 'Uniqueness - PK pcm_cat_name',
-        COUNT(pcm_cat_name) - COUNT(DISTINCT pcm_cat_name),
-        CASE WHEN COUNT(pcm_cat_name) - COUNT(DISTINCT pcm_cat_name) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        COUNT(*) - COUNT(DISTINCT pcm_cat_name),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT pcm_cat_name) > 0 THEN 'FAIL' ELSE 'PASS' END,
         'Duplicate category names found in mapping'
     FROM silver.olist_prd_cat_map
 
@@ -586,4 +628,5 @@ WITH DQ_Report AS (
 )
 
 SELECT * FROM DQ_Report
-ORDER BY Status DESC, TableName, CheckName;
+ORDER BY Status DESC, TableName, CheckName
+
