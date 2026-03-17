@@ -11,6 +11,11 @@ Script Purpose:
 
 USE RetailWarehouse;
 
+-- Create the silver schema if it does not already exist.
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'silver')
+    EXEC('CREATE SCHEMA silver');
+GO
+
 -- 1.customers
 IF OBJECT_ID('silver.olist_cust', 'U') IS NOT NULL
     DROP TABLE silver.olist_cust;

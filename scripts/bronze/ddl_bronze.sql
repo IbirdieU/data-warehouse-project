@@ -11,6 +11,11 @@ Script Purpose:
 
 USE RetailWarehouse;
 
+-- Create the bronze schema if it does not already exist.
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'bronze')
+    EXEC('CREATE SCHEMA bronze');
+GO
+
 ---1.customers---
 IF OBJECT_ID('bronze.olist_cust', 'U') IS NOT NULL
     DROP TABLE bronze.olist_cust;

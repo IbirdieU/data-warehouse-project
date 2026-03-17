@@ -1,11 +1,16 @@
 /*
 ===============================================================================
-DDL Script: Create Gold Views (Virtual Data Mart) with Stable Surrogate Keys
-Target Schema: gold
-Source Schema: silver
-Description: 
-    Creates Logical Views for Dimensions and Facts.
-    Implements deterministic surrogate keys generated from source Primary Keys.
+DDL Script : Create Gold Schema - Star Schema (Physical Tables)
+Database   : RetailWarehouse
+Target     : gold schema
+Source     : silver schema
+===============================================================================
+Architecture:
+    Dimensions : dim_date | dim_customers | dim_products | dim_sellers
+    Fact       : fact_sales  (grain: one row per order item)
+
+Change Log:
+    2026-03-11  Initial physical-table implementation (Star Schema)
 ===============================================================================
 */
 
@@ -13,114 +18,322 @@ USE RetailWarehouse;
 GO
 
 -- =============================================================================
--- 1. Dimension View: gold.dim_customers
+-- 0. Schema
+-- Create the gold schema if it does not already exist.
 -- =============================================================================
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'gold')
+    EXEC('CREATE SCHEMA gold');
+GO
+
+-- =============================================================================
+-- 1. Drop existing objects
+--    Fact first (holds FK references), then dimensions.
+--    Also drops any legacy Views from the previous implementation.
+-- =============================================================================
+
+-- Legacy views
+IF OBJECT_ID('gold.fact_sales',    'V') IS NOT NULL DROP VIEW gold.fact_sales;
+IF OBJECT_ID('gold.dim_sellers',   'V') IS NOT NULL DROP VIEW gold.dim_sellers;
+IF OBJECT_ID('gold.dim_products',  'V') IS NOT NULL DROP VIEW gold.dim_products;
 IF OBJECT_ID('gold.dim_customers', 'V') IS NOT NULL DROP VIEW gold.dim_customers;
 GO
 
-CREATE VIEW gold.dim_customers AS
-SELECT
-    -- Generate a surrogate key based on the primary key to ensure deterministic ordering
-    ROW_NUMBER() OVER (ORDER BY cst_cust_id) AS customer_key,
+-- Physical tables (fact before dimensions due to FK dependencies)
+IF OBJECT_ID('gold.fact_sales',    'U') IS NOT NULL DROP TABLE gold.fact_sales;
+GO
+IF OBJECT_ID('gold.dim_customers', 'U') IS NOT NULL DROP TABLE gold.dim_customers;
+IF OBJECT_ID('gold.dim_products',  'U') IS NOT NULL DROP TABLE gold.dim_products;
+IF OBJECT_ID('gold.dim_sellers',   'U') IS NOT NULL DROP TABLE gold.dim_sellers;
+IF OBJECT_ID('gold.dim_date',      'U') IS NOT NULL DROP TABLE gold.dim_date;
+GO
+
+
+-- =============================================================================
+-- 2. Dimension: gold.dim_customers
+--    Source : silver.olist_cust
+--    Grain  : one row per cst_cust_id (unique per order in Olist model)
+-- =============================================================================
+CREATE TABLE gold.dim_customers (
+    -- Surrogate Key
+    customer_sk         INT          IDENTITY(1,1) NOT NULL,  -- System-generated surrogate PK; stable across source changes
+
+    -- Natural Key
+    customer_id         VARCHAR(50)               NOT NULL,   -- NK: maps one-to-one with cst_cust_id; unique per order, not per real-world buyer
     
-    -- Business/Natural Key
-    cst_cust_id         AS customer_id,
-    cst_cust_unique_id  AS customer_unique_id,
-    
-    -- Attributes
-    cst_city_raw        AS city,
-    cst_state           AS state,
-    cst_zip_code_prefix AS zip_code,
+    -- Descriptive Attributes
+    customer_unique_id  VARCHAR(50)               NULL,       -- Persistent buyer identifier that groups all orders by the same real-world customer (cst_cust_unique_id)
+    zip_code_prefix     CHAR(5)                   NULL,       -- First 5 digits of the customer's postal / ZIP code
+    city                NVARCHAR(100)             NULL,       -- Standardised city name (silver column: cst_city_std)
+    state               CHAR(2)                   NULL,       -- Brazilian state abbreviation, e.g. SP, RJ, MG
     
     -- Metadata
-    dwh_create_date     AS create_date
-FROM silver.olist_cust;
+    dwh_create_date     DATETIME2    DEFAULT GETDATE() NOT NULL,  -- Timestamp when this record was inserted into the gold layer
+
+    CONSTRAINT PK_dim_customers PRIMARY KEY (customer_sk)
+);
 GO
 
 -- =============================================================================
--- 2. Dimension View: gold.dim_products
+-- 3. Dimension: gold.dim_products
+--    Source : silver.olist_prd  LEFT JOIN  silver.olist_prd_cat_map
+--    Grain  : one row per product
 -- =============================================================================
-IF OBJECT_ID('gold.dim_products', 'V') IS NOT NULL DROP VIEW gold.dim_products;
+CREATE TABLE gold.dim_products (
+    -- Surrogate Key
+    product_sk          INT          IDENTITY(1,1) NOT NULL,  -- System-generated surrogate PK; stable across source changes
+    
+    -- Natural Key
+    
+    product_id          VARCHAR(50)               NOT NULL,   -- NK: original product identifier from the source system (prd_prd_id)
+    
+    -- Descriptive Attributes — Category
+    category_name_pt    NVARCHAR(100)             NULL,       -- Product category in Portuguese as it appears in the raw data (prd_cat_name)
+    category_name_en    NVARCHAR(100)             NULL,       -- Product category translated to English via the mapping table (pcm_cat_name_en); NULL if no mapping exists
+    
+    -- Descriptive Attributes — Listing
+    name_length         INT                       NULL,       -- Character count of the product name on the listing (prd_name_len)
+    description_length  INT                       NULL,       -- Character count of the product description (prd_desc_len)
+    photos_quantity     INT                       NULL,       -- Number of photos published for this product (prd_photos_qty)
+    
+    -- Descriptive Attributes — Physical Dimensions
+    weight_g            INT                       NULL,       -- Product weight in grams (prd_weight_g)
+    length_cm           INT                       NULL,       -- Product length in centimetres (prd_len_cm)
+    height_cm           INT                       NULL,       -- Product height in centimetres (prd_height_cm)
+    width_cm            INT                       NULL,       -- Product width in centimetres (prd_width_cm)
+   
+    -- Metadata
+    dwh_create_date     DATETIME2    DEFAULT GETDATE() NOT NULL,  -- Timestamp when this record was inserted into the gold layer
+
+    CONSTRAINT PK_dim_products PRIMARY KEY (product_sk)
+);
 GO
 
-CREATE VIEW gold.dim_products AS
-SELECT
-    -- Generate a surrogate key based on the product primary key
-    ROW_NUMBER() OVER (ORDER BY p.prd_prd_id) AS product_key,
+-- =============================================================================
+-- 4. Dimension: gold.dim_sellers
+--    Source : silver.olist_sel
+--    Grain  : one row per seller
+-- =============================================================================
+CREATE TABLE gold.dim_sellers (
+    -- Surrogate Key
+    seller_sk           INT          IDENTITY(1,1) NOT NULL,  -- System-generated surrogate PK; stable across source changes
     
-    -- Business/Natural Key
-    p.prd_prd_id        AS product_id,
+    -- Natural Key
+    seller_id           VARCHAR(50)               NOT NULL,   -- NK: original seller identifier from the source system (sel_sel_id)
     
-    -- Attributes
-    p.prd_cat_name      AS category_name_pt, -- Original Portuguese category name
-    ISNULL(m.pcm_cat_name_en, 'Unknown') AS category_name, -- Mapped English category name
-    p.prd_weight_g      AS weight_g,
-    p.prd_photos_qty    AS photos_quantity,
+    -- Descriptive Attributes
+    zip_code_prefix     CHAR(5)                   NULL,       -- First 5 digits of the seller's postal / ZIP code (sel_zip_code_prefix)
+    city                NVARCHAR(100)             NULL,       -- Standardised seller city name (silver column: sel_city_std)
+    state               CHAR(2)                   NULL,       -- Brazilian state abbreviation, e.g. SP, MG, PR
     
     -- Metadata
-    p.dwh_create_date   AS create_date
-FROM silver.olist_prd p
-LEFT JOIN silver.olist_prd_cat_map m 
-    ON p.prd_cat_name = m.pcm_cat_name;
+    dwh_create_date     DATETIME2    DEFAULT GETDATE() NOT NULL,  -- Timestamp when this record was inserted into the gold layer
+
+    CONSTRAINT PK_dim_sellers PRIMARY KEY (seller_sk)
+);
 GO
 
--- =============================================================================
--- 3. Dimension View: gold.dim_sellers
--- =============================================================================
-IF OBJECT_ID('gold.dim_sellers', 'V') IS NOT NULL DROP VIEW gold.dim_sellers;
-GO
 
-CREATE VIEW gold.dim_sellers AS
-SELECT
-    -- Generate a surrogate key based on the seller primary key
-    ROW_NUMBER() OVER (ORDER BY sel_sel_id) AS seller_key,
+-- =============================================================================
+-- 5. Dimension: gold.dim_date
+--    Source : Generated (no silver table; derived from a date series CTE)
+--    Grain  : one row per calendar day
+--    Range  : 2016-01-01 → 2020-12-31  (covers full Olist dataset + buffer)
+-- =============================================================================
+CREATE TABLE gold.dim_date (
+    -- Surrogate Key
+    date_sk             INT          IDENTITY(1,1) NOT NULL,  -- System-generated surrogate PK; sequential by date due to ordered INSERT
     
-    -- Business/Natural Key
-    sel_sel_id          AS seller_id,
+    -- Natural Key
+    date_id             INT                        NOT NULL,  -- NK: integer date in YYYYMMDD format for fast, human-readable filtering (e.g. 20180315)
+    full_date           DATE                       NOT NULL,  -- The actual calendar date value for direct date arithmetic
     
-    -- Attributes
-    sel_city            AS city,
-    sel_state           AS state,
-    sel_zip_code_prefix AS zip_code,
+    -- Year Attributes
+    year                INT                        NOT NULL,  -- Four-digit calendar year (e.g. 2018)
+    
+    -- Quarter Attributes
+    quarter             INT                        NOT NULL,  -- Calendar quarter number (1–4)
+    quarter_name        NVARCHAR(2)                NOT NULL,  -- Quarter label for reports (e.g. Q1, Q4)
+    
+    -- Month Attributes
+    month               INT                        NOT NULL,  -- Month number (1=January … 12=December)
+    month_name          NVARCHAR(20)               NOT NULL,  -- Full English month name (e.g. January, November)
+    month_name_short    NVARCHAR(3)                NOT NULL,  -- Three-letter English abbreviation (e.g. Jan, Nov)
+    
+    -- Day Attributes
+    day                 INT                        NOT NULL,  -- Day of the month (1–31)
+    day_of_week         INT                        NOT NULL,  -- ISO weekday number: 1=Monday … 7=Sunday (locale-safe calculation)
+    day_name            NVARCHAR(20)               NOT NULL,  -- Full English weekday name (e.g. Monday, Friday)
+    day_name_short      NVARCHAR(3)                NOT NULL,  -- Three-letter English abbreviation (e.g. Mon, Fri)
+    is_weekend          BIT                        NOT NULL,  -- Convenience flag: 1 = Saturday or Sunday, 0 = weekday
     
     -- Metadata
-    dwh_create_date     AS create_date
-FROM silver.olist_sel;
+    dwh_create_date     DATETIME2    DEFAULT GETDATE() NOT NULL,  -- Timestamp when this record was inserted into the gold layer
+
+    CONSTRAINT PK_dim_date       PRIMARY KEY (date_sk),
+    CONSTRAINT UQ_dim_date_id    UNIQUE (date_id),     -- Guarantees one row per YYYYMMDD integer key
+    CONSTRAINT UQ_dim_date_full  UNIQUE (full_date)    -- Guarantees one row per calendar date
+);
 GO
 
 -- =============================================================================
--- 4. Fact View: gold.fact_sales
+-- 5a. Populate gold.dim_date
+--     Uses a recursive CTE to generate one row per day in the target range.
+--     MAXRECURSION is raised to 2000 to cover multi-year spans (default = 100).
 -- =============================================================================
-IF OBJECT_ID('gold.fact_sales', 'V') IS NOT NULL DROP VIEW gold.fact_sales;
-GO
-
-CREATE VIEW gold.fact_sales AS
+WITH date_series AS (
+    -- Anchor member: start of the date range
+    SELECT CAST('2016-01-01' AS DATE) AS d
+    UNION ALL
+    
+    -- Recursive member: advance one day at a time
+    SELECT DATEADD(DAY, 1, d)
+    FROM   date_series
+    WHERE  d < '2020-12-31'
+)
+INSERT INTO gold.dim_date (
+    date_id, full_date,
+    year,
+    quarter, quarter_name,
+    month,   month_name,    month_name_short,
+    day,     day_of_week,   day_name,    day_name_short,
+    is_weekend
+)
 SELECT
-    -- Primary Key for the Fact Table (Composite Key from source)
-    oi.oi_ord_id        AS order_id,
-    oi.oi_ord_item_id   AS order_item_id,
-    
-    -- Foreign Keys connecting to Dimensions (Using Natural Keys for performance in Views)
-    -- Note: In a physical table implementation, these would often be the Surrogate Keys.
-    o.ord_cust_id       AS customer_id,      -- Links to gold.dim_customers.customer_id
-    oi.oi_prd_id        AS product_id,       -- Links to gold.dim_products.product_id
-    oi.oi_sel_id        AS seller_id,        -- Links to gold.dim_sellers.seller_id
-    
-    -- Transaction Dates
-    o.ord_purchase_ts   AS purchase_date,
-    o.ord_approved_ts   AS approved_date,
-    o.ord_del_cust_dt   AS delivered_date,
-    o.ord_est_del_dt    AS estimated_delivery_date,
-    
-    -- Measures (Numerical values for analysis)
-    oi.oi_price         AS price,
-    oi.oi_freight_val   AS freight_value,
-    (oi.oi_price + oi.oi_freight_val) AS total_amount, -- Calculated total
-    
-    -- Status
-    o.ord_status        AS order_status
-FROM silver.olist_ord_item oi
--- Join with Order Header to get customer reference and dates
-LEFT JOIN silver.olist_ord o 
-    ON oi.oi_ord_id = o.ord_ord_id;
+    -- Natural key: YYYYMMDD integer (e.g. 20180315)
+    CAST(FORMAT(d, 'yyyyMMdd') AS INT)                          AS date_id,
+    d                                                           AS full_date,
+
+    -- Year
+    YEAR(d)                                                     AS year,
+
+    -- Quarter
+    DATEPART(QUARTER, d)                                        AS quarter,
+    N'Q' + CAST(DATEPART(QUARTER, d) AS NVARCHAR(1))            AS quarter_name,
+
+    -- Month
+    MONTH(d)                                                    AS month,
+    DATENAME(MONTH, d)                                          AS month_name,
+    LEFT(DATENAME(MONTH, d), 3)                                 AS month_name_short,
+
+    -- Day
+    DAY(d)                                                      AS day,
+
+    -- ISO-safe weekday: ((DATEPART(WEEKDAY) + @@DATEFIRST - 2) % 7) + 1
+    -- Produces 1=Mon, 2=Tue, … 7=Sun regardless of server SET DATEFIRST setting
+    (( DATEPART(WEEKDAY, d) + @@DATEFIRST - 2 ) % 7) + 1       AS day_of_week,
+    DATENAME(WEEKDAY, d)                                        AS day_name,
+    LEFT(DATENAME(WEEKDAY, d), 3)                               AS day_name_short,
+
+    -- Weekend flag — DATEPART(WEEKDAY) returns 1=Sun or 7=Sat with default DATEFIRST=7
+    CASE
+        WHEN (( DATEPART(WEEKDAY, d) + @@DATEFIRST - 2 ) % 7) + 1 IN (6, 7)
+        THEN 1
+        ELSE 0
+    END                                                         AS is_weekend
+
+FROM   date_series
+OPTION (MAXRECURSION 2000);
 GO
+
+-- =============================================================================
+-- 6. Fact Table: gold.fact_sales
+--    Source  : silver.olist_ord_item  (grain driver — one row per order item)
+--              silver.olist_ord       (order header: dates, status, is_late)
+--              silver.olist_ord_pay   (payments: SUM aggregated to order level)
+--              silver.olist_ord_rev   (review score: one review per order)
+--    Grain   : one row per order item  (order_id + order_item_id)
+-- =============================================================================
+CREATE TABLE gold.fact_sales (
+    -- Surrogate Key
+    sale_sk                 INT           IDENTITY(1,1) NOT NULL,  -- System-generated surrogate PK; uniquely identifies each fact row
+    
+    -- Degenerate Dimensions (natural keys kept for traceability, no dim table)
+    order_id                VARCHAR(50)               NOT NULL,    -- Degenerate dimension: original order hash from the source system (oi_ord_id)
+    order_item_id           INT                       NOT NULL,    -- Degenerate dimension: sequential item number within the order (1-based, oi_ord_item_id)
+    order_status            NVARCHAR(20)              NULL,        -- Order lifecycle status at load time (e.g. delivered, shipped, canceled)
+
+    -- Foreign Keys → Dimension Surrogate Keys
+    customer_sk             INT                       NOT NULL,    -- FK → gold.dim_customers.customer_sk; identifies the purchasing customer
+    product_sk              INT                       NOT NULL,    -- FK → gold.dim_products.product_sk;  identifies the purchased product
+    seller_sk               INT                       NOT NULL,    -- FK → gold.dim_sellers.seller_sk;    identifies the fulfilling seller
+    purchase_date_sk        INT                       NOT NULL,    -- FK → gold.dim_date.date_sk;         date the order was placed by the customer
+    
+    -- Measures — Financial
+    price                   DECIMAL(18,2)             NULL,        -- Selling price of this specific order item (silver: oi_price)
+    freight_value           DECIMAL(18,2)             NULL,        -- Freight / shipping cost attributed to this item (silver: oi_freight_val)
+    total_payment_value     DECIMAL(18,2)             NULL,        -- Total amount paid for the entire order across all payment methods
+                                                                   --   Source : SUM(op_pay_val) from silver.olist_ord_pay grouped by order_id
+                                                                   --   Grain note: this is an order-level metric stored at item grain.
+                                                                   --   When aggregating across items, use MAX() or divide by item count
+                                                                   --   to avoid inflating totals across multi-item orders.
+    
+    -- Measures — Customer Satisfaction
+    review_score            INT                       NULL,        -- Customer satisfaction rating for the order (1 = worst … 5 = best); source: silver.olist_ord_rev.or_rev_score
+
+    -- Measures — Delivery Performance
+    is_late                 BIT                       NULL,        -- Delivery flag derived in silver layer: 1 = actual delivery exceeded estimated date, 0 = on time or early
+
+    -- Metadata
+    dwh_create_date         DATETIME2     DEFAULT GETDATE() NOT NULL,  -- Timestamp when this record was inserted into the gold layer
+
+    CONSTRAINT PK_fact_sales        PRIMARY KEY (sale_sk),
+    CONSTRAINT UQ_fact_sales_grain  UNIQUE      (order_id, order_item_id),   -- Enforces grain integrity: exactly one row per order item
+
+    -- Logical Foreign Key constraints
+    -- These document the Star Schema relationships and are enforced by SQL Server.
+    -- If ETL load order cannot guarantee dimension rows exist first, add WITH NOCHECK.
+    CONSTRAINT FK_fact_sales_customer  FOREIGN KEY (customer_sk)      REFERENCES gold.dim_customers (customer_sk),
+    CONSTRAINT FK_fact_sales_product   FOREIGN KEY (product_sk)       REFERENCES gold.dim_products  (product_sk),
+    CONSTRAINT FK_fact_sales_seller    FOREIGN KEY (seller_sk)        REFERENCES gold.dim_sellers   (seller_sk),
+    CONSTRAINT FK_fact_sales_date      FOREIGN KEY (purchase_date_sk) REFERENCES gold.dim_date      (date_sk)
+);
+GO
+
+
+/*
+===============================================================================
+Post-DDL Notes for the ETL / Load Stored Procedure
+===============================================================================
+
+dim_customers  (source: silver.olist_cust)
+    customer_id        <- cst_cust_id
+    customer_unique_id <- cst_cust_unique_id
+    zip_code_prefix    <- cst_zip_code_prefix
+    city               <- cst_city_std          -- use standardised column, NOT cst_city_raw
+    state              <- cst_state
+
+dim_products   (source: silver.olist_prd LEFT JOIN silver.olist_prd_cat_map ON prd_cat_name = pcm_cat_name)
+    product_id         <- prd_prd_id
+    category_name_pt   <- prd_cat_name
+    category_name_en   <- ISNULL(pcm_cat_name_en, 'Unknown')
+    name_length        <- prd_name_len
+    description_length <- prd_desc_len
+    photos_quantity    <- prd_photos_qty
+    weight_g           <- prd_weight_g
+    length_cm          <- prd_len_cm
+    height_cm          <- prd_height_cm
+    width_cm           <- prd_width_cm
+
+dim_sellers    (source: silver.olist_sel)
+    seller_id          <- sel_sel_id
+    zip_code_prefix    <- sel_zip_code_prefix
+    city               <- sel_city_std          -- NOTE: sel_city does NOT exist; use sel_city_std
+    state              <- sel_state
+
+dim_date       → already populated by the recursive CTE in section 5a above.
+
+fact_sales     (base grain: silver.olist_ord_item)
+    order_id               <- oi_ord_id
+    order_item_id          <- oi_ord_item_id
+    order_status           <- ord_status                      (JOIN silver.olist_ord ON ord_ord_id = oi_ord_id)
+    customer_sk            <- LOOKUP dim_customers WHERE customer_id = ord_cust_id
+    product_sk             <- LOOKUP dim_products  WHERE product_id  = oi_prd_id
+    seller_sk              <- LOOKUP dim_sellers   WHERE seller_id   = oi_sel_id
+    purchase_date_sk       <- LOOKUP dim_date      WHERE date_id     = FORMAT(ord_purchase_ts, 'yyyyMMdd')
+    price                  <- oi_price
+    freight_value          <- oi_freight_val
+    total_payment_value    <- SUM(op_pay_val) ... GROUP BY op_ord_id  (from silver.olist_ord_pay)
+    review_score           <- or_rev_score                    (JOIN silver.olist_ord_rev ON or_ord_id = oi_ord_id)
+    is_late                <- ord_is_late
+===============================================================================
+*/
