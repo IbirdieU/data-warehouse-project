@@ -92,7 +92,83 @@ BEGIN
     PRINT '>>>  -------------';
 
     -- =========================================================================
-    -- DIMENSION 1: gold.dim_customers
+    -- DIMENSION 1: gold.dim_date
+    -- Source  : Generated via recursive CTE (no silver source table)
+    -- Range   : 2016-01-01 → 2020-12-31
+    --
+    -- dim_date is a static calendar table — its content never changes between
+    -- ETL runs. The IF NOT EXISTS guard skips the insert on subsequent runs,
+    -- making the procedure safe to re-execute without duplicating date rows.
+    -- It is NOT deleted in the clear step above for the same reason.
+    -- =========================================================================
+    IF NOT EXISTS (SELECT 1 FROM gold.dim_date)
+    BEGIN
+        SET @start_time = GETDATE();
+        PRINT '>>>  Inserting Data Into: gold.dim_date';
+
+        WITH date_series AS (
+            -- Anchor member: first date in range
+            SELECT CAST('2016-01-01' AS DATE) AS d
+            UNION ALL
+            -- Recursive member: advance one day at a time until end of range
+            SELECT DATEADD(DAY, 1, d)
+            FROM   date_series
+            WHERE  d < '2020-12-31'
+        )
+        INSERT INTO gold.dim_date (
+            date_id,    full_date,
+            year,
+            quarter,    quarter_name,
+            month,      month_name,     month_name_short,
+            day,        day_of_week,    day_name,    day_name_short,
+            is_weekend
+        )
+        SELECT
+            -- NK: integer YYYYMMDD for fast filtering (e.g. 20180315)
+            CAST(FORMAT(d, 'yyyyMMdd') AS INT)                          AS date_id,
+            d                                                           AS full_date,
+
+            YEAR(d)                                                     AS year,
+
+            DATEPART(QUARTER, d)                                        AS quarter,
+            N'Q' + CAST(DATEPART(QUARTER, d) AS NVARCHAR(1))           AS quarter_name,
+
+            MONTH(d)                                                    AS month,
+            DATENAME(MONTH, d)                                          AS month_name,
+            LEFT(DATENAME(MONTH, d), 3)                                 AS month_name_short,
+
+            DAY(d)                                                      AS day,
+
+            -- ISO-safe weekday: 1=Mon … 7=Sun, independent of SET DATEFIRST locale
+            (( DATEPART(WEEKDAY, d) + @@DATEFIRST - 2 ) % 7) + 1       AS day_of_week,
+            DATENAME(WEEKDAY, d)                                        AS day_name,
+            LEFT(DATENAME(WEEKDAY, d), 3)                               AS day_name_short,
+
+            -- Weekend flag: 6=Sat, 7=Sun in ISO numbering above
+            CASE
+                WHEN (( DATEPART(WEEKDAY, d) + @@DATEFIRST - 2 ) % 7) + 1 IN (6, 7)
+                THEN 1 ELSE 0
+            END                                                         AS is_weekend
+
+        FROM date_series
+        OPTION (MAXRECURSION 2000); -- Override default 100 to cover multi-year range
+
+        SET @rows_inserted = @@ROWCOUNT;
+        SET @end_time      = GETDATE();
+        INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
+        VALUES (@batch_id, 'gold.dim_date', @rows_inserted,
+                CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
+                'SUCCESS', NULL);
+
+        PRINT '>>>  Rows Inserted: '  + CAST(@rows_inserted AS VARCHAR(20));
+        PRINT '>>>  Load Duration: '  + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
+        PRINT '>>>  -------------';
+    END
+    ELSE
+        PRINT '>>>  gold.dim_date already populated — skipped.';
+
+    -- =========================================================================
+    -- DIMENSION 2: gold.dim_customers
     -- Source  : silver.olist_cust
     -- Mapping : cst_cust_id        -> customer_id       (Natural Key)
     --           cst_cust_unique_id -> customer_unique_id
@@ -131,7 +207,7 @@ BEGIN
     PRINT '>>>  -------------';
 
     -- =========================================================================
-    -- DIMENSION 2: gold.dim_products
+    -- DIMENSION 3: gold.dim_products
     -- Source  : silver.olist_prd  LEFT JOIN  silver.olist_prd_cat_map
     -- Mapping : prd_prd_id        -> product_id         (Natural Key)
     --           prd_cat_name      -> category_name_pt   (Portuguese original)
@@ -188,7 +264,7 @@ BEGIN
     PRINT '>>>  -------------';
 
     -- =========================================================================
-    -- DIMENSION 3: gold.dim_sellers
+    -- DIMENSION 4: gold.dim_sellers
     -- Source  : silver.olist_sel
     -- Mapping : sel_sel_id         -> seller_id         (Natural Key)
     --           sel_zip_code_prefix-> zip_code_prefix
@@ -222,12 +298,6 @@ BEGIN
     PRINT '>>>  Rows Inserted: '  + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: '  + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
-
-    -- =========================================================================
-    -- NOTE: gold.dim_date is intentionally skipped here.
-    --       It is a static calendar table, populated once by the recursive CTE
-    --       in ddl_gold.sql and does not need to be reloaded on each ETL run.
-    -- =========================================================================
 
     -- =========================================================================
     -- FACT TABLE: gold.fact_sales
