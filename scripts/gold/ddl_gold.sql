@@ -40,7 +40,6 @@ GO
 
 -- Physical tables (fact before dimensions due to FK dependencies)
 IF OBJECT_ID('gold.fact_sales',    'U') IS NOT NULL DROP TABLE gold.fact_sales;
-GO
 IF OBJECT_ID('gold.dim_customers', 'U') IS NOT NULL DROP TABLE gold.dim_customers;
 IF OBJECT_ID('gold.dim_products',  'U') IS NOT NULL DROP TABLE gold.dim_products;
 IF OBJECT_ID('gold.dim_sellers',   'U') IS NOT NULL DROP TABLE gold.dim_sellers;

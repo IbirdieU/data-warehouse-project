@@ -3,6 +3,8 @@
 Data Quality Check Script for Silver Layer 
 ===============================================================================
 */
+USE RetailWarehouse;
+GO
 
 WITH DQ_Report AS (
     
@@ -281,25 +283,43 @@ WITH DQ_Report AS (
     -- 5. silver.olist_ord_rev (Reviews)
     -- ====================================================================
 
-    -- Check 5.1: PK Completeness (or_rev_id should not be NULL)
-    SELECT 'silver.olist_ord_rev', 'Completeness - PK or_rev_id',
+    -- Check 5.1: SK Completeness (rev_sk must never be NULL — IDENTITY column)
+    SELECT 'silver.olist_ord_rev', 'Completeness - SK rev_sk',
+        SUM(CASE WHEN rev_sk IS NULL THEN 1 ELSE 0 END),
+        CASE WHEN SUM(CASE WHEN rev_sk IS NULL THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        'Surrogate key rev_sk contains NULL values'
+    FROM silver.olist_ord_rev
+
+    UNION ALL
+
+    -- Check 5.2: SK Uniqueness (rev_sk must be unique across the entire table)
+    SELECT 'silver.olist_ord_rev', 'Uniqueness - SK rev_sk',
+        COUNT(*) - COUNT(DISTINCT rev_sk),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT rev_sk) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        'Duplicate surrogate keys found in rev_sk'
+    FROM silver.olist_ord_rev
+
+    UNION ALL
+
+    -- Check 5.3: NK Sanity (or_rev_id must not be NULL — primary source reference)
+    SELECT 'silver.olist_ord_rev', 'Completeness - NK or_rev_id',
         SUM(CASE WHEN or_rev_id IS NULL THEN 1 ELSE 0 END),
         CASE WHEN SUM(CASE WHEN or_rev_id IS NULL THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
-        'Primary key or_rev_id contains NULL values'
+        'Natural key or_rev_id contains NULL values'
     FROM silver.olist_ord_rev
 
     UNION ALL
 
-    -- Check 5.2: Uniqueness on Primary Key (or_rev_id)
-    SELECT 'silver.olist_ord_rev', 'Uniqueness - PK or_rev_id',
-        COUNT(*) - COUNT(DISTINCT or_rev_id),
-        CASE WHEN COUNT(*) - COUNT(DISTINCT or_rev_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
-        'Duplicate primary keys found'
+    -- Check 5.4: Composite Uniqueness (or_rev_id + or_ord_id must be unique)
+    SELECT 'silver.olist_ord_rev', 'Uniqueness - Composite (or_rev_id, or_ord_id)',
+        COUNT(*) - COUNT(DISTINCT CONCAT(or_rev_id, '||', or_ord_id)),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT CONCAT(or_rev_id, '||', or_ord_id)) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        'Exact duplicate found: same or_rev_id linked to same or_ord_id more than once'
     FROM silver.olist_ord_rev
 
     UNION ALL
 
-    -- Check 5.3: Integrity (or_ord_id should exist in silver.olist_ord)
+    -- Check 5.5: Integrity (or_ord_id must exist in silver.olist_ord)
     SELECT 'silver.olist_ord_rev', 'Integrity - Order Reference (or_ord_id)',
         COUNT(r.or_ord_id),
         CASE WHEN COUNT(r.or_ord_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
@@ -310,7 +330,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 5.4: Validity (Review Score must be between 1 and 5)
+    -- Check 5.6: Validity (Review Score must be between 1 and 5)
     SELECT 'silver.olist_ord_rev', 'Validity - Score Range (1-5)',
         SUM(CASE WHEN or_rev_score < 1 OR or_rev_score > 5 THEN 1 ELSE 0 END),
         CASE WHEN SUM(CASE WHEN or_rev_score < 1 OR or_rev_score > 5 THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
@@ -319,7 +339,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 5.5: Validity (Date Logic: Creation Date < Answer Date)
+    -- Check 5.7: Validity (Date Logic: Creation Date must be before Answer Date)
     SELECT 'silver.olist_ord_rev', 'Validity - Timeline Consistency',
         SUM(CASE WHEN or_rev_ans_ts < or_rev_create_dt THEN 1 ELSE 0 END),
         CASE WHEN SUM(CASE WHEN or_rev_ans_ts < or_rev_create_dt THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
@@ -328,12 +348,12 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 5.6: Ghost Strings (Empty or whitespace-only strings in text columns)
+    -- Check 5.8: Ghost Strings (Empty or whitespace-only strings in text columns)
     SELECT 'silver.olist_ord_rev', 'Format - Ghost Strings in Comments',
-        SUM(CASE WHEN (or_rev_cmt_msg IS NOT NULL AND LEN(TRIM(or_rev_cmt_msg)) = 0) 
-                  OR (or_rev_cmt_title IS NOT NULL AND LEN(TRIM(or_rev_cmt_title)) = 0) THEN 1 ELSE 0 END),
-        CASE WHEN SUM(CASE WHEN (or_rev_cmt_msg IS NOT NULL AND LEN(TRIM(or_rev_cmt_msg)) = 0) 
-                            OR (or_rev_cmt_title IS NOT NULL AND LEN(TRIM(or_rev_cmt_title)) = 0) THEN 1 ELSE 0 END) > 0 
+        SUM(CASE WHEN (or_rev_cmt_msg   IS NOT NULL AND LEN(TRIM(or_rev_cmt_msg))   = 0)
+                   OR (or_rev_cmt_title IS NOT NULL AND LEN(TRIM(or_rev_cmt_title)) = 0) THEN 1 ELSE 0 END),
+        CASE WHEN SUM(CASE WHEN (or_rev_cmt_msg   IS NOT NULL AND LEN(TRIM(or_rev_cmt_msg))   = 0)
+                              OR (or_rev_cmt_title IS NOT NULL AND LEN(TRIM(or_rev_cmt_title)) = 0) THEN 1 ELSE 0 END) > 0
              THEN 'FAIL' ELSE 'PASS' END,
         'Found whitespace strings that should be NULL'
     FROM silver.olist_ord_rev
@@ -373,8 +393,8 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 6.4: Validity (Date Logic: Delivery Date < Purchase Date is impossible)
-    SELECT 'silver.olist_ord', 'Validity - Delivery vs Purchase Date',
+    -- Check 6.4: Validity (Date Logic: Purchase Date must be before Delivery Date)
+    SELECT 'silver.olist_ord', 'Validity - Timeline Consistency',
         SUM(CASE WHEN ord_del_cust_dt < ord_purchase_ts THEN 1 ELSE 0 END),
         CASE WHEN SUM(CASE WHEN ord_del_cust_dt < ord_purchase_ts THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
         'Delivery date is earlier than Purchase date'

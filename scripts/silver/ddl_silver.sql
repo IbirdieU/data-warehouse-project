@@ -96,16 +96,17 @@ IF OBJECT_ID('silver.olist_ord_rev', 'U') IS NOT NULL
 GO
 
 CREATE TABLE silver.olist_ord_rev (
-    or_rev_id           VARCHAR(50) NOT NULL,  -- PRIMARY KEY
-    or_ord_id           VARCHAR(50),
-    or_rev_score        INT,
-    or_rev_cmt_title    NVARCHAR(200),
-    or_rev_cmt_msg      NVARCHAR(MAX),
-    or_rev_create_dt    DATETIME,
-    or_rev_ans_ts       DATETIME,
-    dwh_create_date     DATETIME2 DEFAULT GETDATE()
+    rev_sk              INT          IDENTITY(1,1) NOT NULL,  -- SURROGATE KEY: source or_rev_id is duplicated across orders; SK avoids PK violations
+    or_rev_id           VARCHAR(50)               NULL,       
+    or_ord_id           VARCHAR(50)               NULL,     
+    or_rev_score        INT                       NULL,
+    or_rev_cmt_title    NVARCHAR(200)             NULL,
+    or_rev_cmt_msg      NVARCHAR(MAX)             NULL,
+    or_rev_create_dt    DATETIME                  NULL,       
+    or_rev_ans_ts       DATETIME                  NULL,       
+    dwh_create_date     DATETIME2    DEFAULT GETDATE()
 
-    CONSTRAINT PK_olist_ord_rev PRIMARY KEY (or_rev_id),
+    CONSTRAINT PK_olist_ord_rev  PRIMARY KEY (rev_sk),
     CONSTRAINT CHK_ord_rev_score CHECK (or_rev_score BETWEEN 1 AND 5)
 );
 GO

@@ -26,6 +26,11 @@ BEGIN
     PRINT 'Loading Silver Layer...';
     PRINT '================================================';
 
+    -- =========================================================================
+    -- Begin single atomic transaction for the entire Silver refresh
+    -- =========================================================================
+    BEGIN TRANSACTION;
+
     -- ========== TABLE 1: silver.olist_geo ==========
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_geo';
@@ -189,35 +194,19 @@ BEGIN
 	PRINT '>>>  Inserting Data Into: silver.olist_ord_rev';
 
     INSERT INTO silver.olist_ord_rev (or_rev_id, or_ord_id, or_rev_score, or_rev_cmt_title, or_rev_cmt_msg, or_rev_create_dt, or_rev_ans_ts)
-    SELECT 
+    SELECT
         -- Fail-Fast: IDs as VARCHAR(50)
-        CAST(or_rev_id AS VARCHAR(50)), 
-        CAST(or_ord_id AS VARCHAR(50)), 
+        CAST(or_rev_id AS VARCHAR(50)),
+        CAST(or_ord_id AS VARCHAR(50)),
         -- Safe Measures: Numeric cast
-        CAST(or_rev_score AS INT), 
-        -- Ghost Strings: Text cleanup for title
-        CAST(NULLIF(TRIM(or_rev_cmt_title), '') AS VARCHAR(100)), 
-        -- Ghost Strings: Text cleanup for message (large text)
-        CAST(NULLIF(TRIM(or_rev_cmt_msg), '') AS VARCHAR(MAX)),
-        -- Safe Measures: Datetime cast
-        CAST(or_rev_create_dt AS DATETIME), 
-        CAST(or_rev_ans_ts AS DATETIME) 
-    FROM (
-            SELECT 
-                or_rev_id,
-                or_ord_id,
-                or_rev_score,
-                or_rev_cmt_title,
-                or_rev_cmt_msg,
-                or_rev_create_dt,
-                or_rev_ans_ts,
-                ROW_NUMBER() OVER (
-                    PARTITION BY or_rev_id 
-                    ORDER BY CAST(or_rev_ans_ts AS DATETIME) DESC
-                ) as rn
-            FROM bronze.olist_ord_rev  
-    ) t
-    WHERE t.rn = 1;
+        CAST(or_rev_score AS INT),
+        -- Ghost Strings: Text cleanup
+        CAST(NULLIF(TRIM(or_rev_cmt_title), '') AS NVARCHAR(200)),
+        CAST(NULLIF(TRIM(or_rev_cmt_msg),   '') AS NVARCHAR(MAX)),
+        -- Safe Measures: DATETIME cast
+        CAST(or_rev_create_dt AS DATETIME),
+        CAST(or_rev_ans_ts    AS DATETIME)
+    FROM bronze.olist_ord_rev;
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
@@ -364,13 +353,27 @@ BEGIN
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
 
+    -- =========================================================================
+    -- Commit the full transaction — all five tables loaded successfully
+    -- =========================================================================
+    COMMIT TRANSACTION;
+
     SET @batch_end_time = GETDATE();
 	PRINT '=========================================='
 	PRINT 'Loading Silver Layer is Completed';
     PRINT '   - Total Load Duration: ' + CAST(DATEDIFF(SECOND, @batch_start_time, @batch_end_time) AS VARCHAR(50)) + ' seconds';
 	PRINT '=========================================='
     END TRY
+
+    -- =========================================================================
+    -- Error handling
+    -- =========================================================================
     BEGIN CATCH
+
+        -- Roll back everything if any single statement failed
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
 	PRINT '=========================================='
 	PRINT 'ERROR OCCURED DURING LOADING SILVER LAYER'
 	PRINT 'Error Message: ' + ERROR_MESSAGE();

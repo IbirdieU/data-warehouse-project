@@ -328,9 +328,10 @@ BEGIN
     --   which LEFT JOINs cleanly to the item grain.
     --
     -- Review logic:
-    --   An order can have duplicate review entries in the source. ROW_NUMBER
-    --   partitioned by or_ord_id and ordered by or_rev_create_dt DESC ensures
-    --   only the most recent review (rn = 1) is kept per order.
+    --   silver.olist_ord_rev stores ALL source records (surrogate key rev_sk prevents
+    --   PK violations from duplicate or_rev_id values in the source).
+    --   ROW_NUMBER PARTITION BY or_ord_id enforces one review per order at the gold
+    --   grain level, ordered by or_rev_create_dt DESC.
     -- =========================================================================
     SET @start_time = GETDATE();
     PRINT '>>>  Inserting Data Into: gold.fact_sales';
@@ -405,10 +406,8 @@ BEGIN
     ) pay
         ON pay.op_ord_id = oi.oi_ord_id
 
-    -- Latest review per order:
-    --   ROW_NUMBER partitioned by order, ordered most-recent-first.
-    --   Joining on rn = 1 ensures only one review row is returned per order,
-    --   preventing fan-out. Ties broken by or_rev_ans_ts (response timestamp).
+    -- Review: silver stores all records (full audit trail via surrogate key rev_sk).
+    -- ROW_NUMBER picks the latest review per order — grain enforcement belongs in gold.
     LEFT JOIN (
         SELECT
             or_ord_id,
@@ -416,12 +415,12 @@ BEGIN
             ROW_NUMBER() OVER (
                 PARTITION BY or_ord_id
                 ORDER BY or_rev_create_dt DESC,  -- Most recently created review first
-                         or_rev_ans_ts   DESC    -- Secondary tie-break: latest response
+                         or_rev_ans_ts   DESC   -- Tie-break: latest response timestamp
             ) AS rn
         FROM silver.olist_ord_rev
     ) rev
         ON  rev.or_ord_id = oi.oi_ord_id
-        AND rev.rn        = 1;                   -- Keep only the most recent review
+        AND rev.rn        = 1;
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time      = GETDATE();
