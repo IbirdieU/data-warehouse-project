@@ -117,10 +117,10 @@ BEGIN
         )
         INSERT INTO gold.dim_date (
             date_id,    full_date,
-            year,
-            quarter,    quarter_name,
-            month,      month_name,     month_name_short,
-            day,        day_of_week,    day_name,    day_name_short,
+            calendar_year,
+            quarter_number,    quarter_name,
+            month_number,      month_name,     month_name_short,
+            day_of_month,        day_of_week,    day_name,    day_name_short,
             is_weekend
         )
         SELECT
@@ -239,8 +239,8 @@ BEGIN
     )
     SELECT
         p.prd_prd_id,                                    -- NK: product identifier
-        p.prd_cat_name,                                  -- Original Portuguese category
-        ISNULL(m.pcm_cat_name_en, 'Unknown'),            -- English translation; 'Unknown' if no mapping
+        ISNULL(p.prd_cat_name,  'nao informado'),        -- Original Portuguese category
+        ISNULL(m.pcm_cat_name_en, 'unknown'),            -- English translation; 'Unknown' if no mapping
         p.prd_name_len,                                  -- Character count of product name
         p.prd_desc_len,                                  -- Character count of product description
         p.prd_photos_qty,                                -- Number of listing photos

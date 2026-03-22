@@ -126,6 +126,7 @@ CREATE TABLE silver.olist_ord (
     ord_del_cust_dt     DATETIME,
     ord_est_del_dt      DATETIME,
     ord_is_late         BIT,                   -- Flag: 1=Late, 0=On Time (Derived column)
+    delivery_lead_time  INT,                   -- Days between purchase and customer delivery (Derived column; NULL if not yet delivered)
     dwh_create_date     DATETIME2 DEFAULT GETDATE()
 
     CONSTRAINT PK_olist_ord PRIMARY KEY (ord_ord_id)

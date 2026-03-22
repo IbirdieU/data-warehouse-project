@@ -28,15 +28,7 @@ GO
 -- =============================================================================
 -- 1. Drop existing objects
 --    Fact first (holds FK references), then dimensions.
---    Also drops any legacy Views from the previous implementation.
 -- =============================================================================
-
--- Legacy views
-IF OBJECT_ID('gold.fact_sales',    'V') IS NOT NULL DROP VIEW gold.fact_sales;
-IF OBJECT_ID('gold.dim_sellers',   'V') IS NOT NULL DROP VIEW gold.dim_sellers;
-IF OBJECT_ID('gold.dim_products',  'V') IS NOT NULL DROP VIEW gold.dim_products;
-IF OBJECT_ID('gold.dim_customers', 'V') IS NOT NULL DROP VIEW gold.dim_customers;
-GO
 
 -- Physical tables (fact before dimensions due to FK dependencies)
 IF OBJECT_ID('gold.fact_sales',    'U') IS NOT NULL DROP TABLE gold.fact_sales;
@@ -147,19 +139,19 @@ CREATE TABLE gold.dim_date (
     full_date           DATE                       NOT NULL,  -- The actual calendar date value for direct date arithmetic
     
     -- Year Attributes
-    year                INT                        NOT NULL,  -- Four-digit calendar year (e.g. 2018)
+    calendar_year       INT                        NOT NULL,  -- Four-digit calendar year (e.g. 2018)
     
     -- Quarter Attributes
-    quarter             INT                        NOT NULL,  -- Calendar quarter number (1–4)
+    quarter_number      INT                        NOT NULL,  -- Calendar quarter number (1–4)
     quarter_name        NVARCHAR(2)                NOT NULL,  -- Quarter label for reports (e.g. Q1, Q4)
     
     -- Month Attributes
-    month               INT                        NOT NULL,  -- Month number (1=January … 12=December)
+    month_number        INT                        NOT NULL,  -- Month number (1=January … 12=December)
     month_name          NVARCHAR(20)               NOT NULL,  -- Full English month name (e.g. January, November)
     month_name_short    NVARCHAR(3)                NOT NULL,  -- Three-letter English abbreviation (e.g. Jan, Nov)
     
     -- Day Attributes
-    day                 INT                        NOT NULL,  -- Day of the month (1–31)
+    day_of_month        INT                        NOT NULL,  -- Day of the month (1–31)
     day_of_week         INT                        NOT NULL,  -- ISO weekday number: 1=Monday … 7=Sunday (locale-safe calculation)
     day_name            NVARCHAR(20)               NOT NULL,  -- Full English weekday name (e.g. Monday, Friday)
     day_name_short      NVARCHAR(3)                NOT NULL,  -- Three-letter English abbreviation (e.g. Mon, Fri)
@@ -228,52 +220,3 @@ CREATE TABLE gold.fact_sales (
     CONSTRAINT FK_fact_sales_date      FOREIGN KEY (purchase_date_sk) REFERENCES gold.dim_date      (date_sk)
 );
 GO
-
-
-/*
-===============================================================================
-Post-DDL Notes for the ETL / Load Stored Procedure
-===============================================================================
-
-dim_customers  (source: silver.olist_cust)
-    customer_id        <- cst_cust_id
-    customer_unique_id <- cst_cust_unique_id
-    zip_code_prefix    <- cst_zip_code_prefix
-    city               <- cst_city_std          -- use standardised column, NOT cst_city_raw
-    state              <- cst_state
-
-dim_products   (source: silver.olist_prd LEFT JOIN silver.olist_prd_cat_map ON prd_cat_name = pcm_cat_name)
-    product_id         <- prd_prd_id
-    category_name_pt   <- prd_cat_name
-    category_name_en   <- ISNULL(pcm_cat_name_en, 'Unknown')
-    name_length        <- prd_name_len
-    description_length <- prd_desc_len
-    photos_quantity    <- prd_photos_qty
-    weight_g           <- prd_weight_g
-    length_cm          <- prd_len_cm
-    height_cm          <- prd_height_cm
-    width_cm           <- prd_width_cm
-
-dim_sellers    (source: silver.olist_sel)
-    seller_id          <- sel_sel_id
-    zip_code_prefix    <- sel_zip_code_prefix
-    city               <- sel_city_std          -- NOTE: sel_city does NOT exist; use sel_city_std
-    state              <- sel_state
-
-dim_date       → already populated by the recursive CTE in section 5a above.
-
-fact_sales     (base grain: silver.olist_ord_item)
-    order_id               <- oi_ord_id
-    order_item_id          <- oi_ord_item_id
-    order_status           <- ord_status                      (JOIN silver.olist_ord ON ord_ord_id = oi_ord_id)
-    customer_sk            <- LOOKUP dim_customers WHERE customer_id = ord_cust_id
-    product_sk             <- LOOKUP dim_products  WHERE product_id  = oi_prd_id
-    seller_sk              <- LOOKUP dim_sellers   WHERE seller_id   = oi_sel_id
-    purchase_date_sk       <- LOOKUP dim_date      WHERE date_id     = FORMAT(ord_purchase_ts, 'yyyyMMdd')
-    price                  <- oi_price
-    freight_value          <- oi_freight_val
-    total_payment_value    <- SUM(op_pay_val) ... GROUP BY op_ord_id  (from silver.olist_ord_pay)
-    review_score           <- or_rev_score                    (JOIN silver.olist_ord_rev ON or_ord_id = oi_ord_id)
-    is_late                <- ord_is_late
-===============================================================================
-*/

@@ -225,32 +225,68 @@ BEGIN
 	TRUNCATE TABLE silver.olist_ord;
 	PRINT '>>>  Inserting Data Into: silver.olist_ord';
     
-    INSERT INTO silver.olist_ord (ord_ord_id, ord_cust_id, ord_status, ord_purchase_ts, ord_approved_ts, ord_del_carrier_dt, ord_del_cust_dt, ord_est_del_dt, ord_is_late)
-    SELECT 
-        -- Fail-Fast: IDs as VARCHAR(50)
-        CAST(ord_ord_id AS VARCHAR(50)), 
-        CAST(ord_cust_id AS VARCHAR(50)), 
-        -- Ghost Strings: Status text cleanup
-        CAST(NULLIF(TRIM(ord_status), '') AS NVARCHAR(20)), 
-        -- Safe Measures: Datetime casts
-        CAST(ord_purchase_ts AS DATETIME), 
-        CAST(ord_approved_ts AS DATETIME), 
-        CAST(ord_del_carrier_dt AS DATETIME), 
-        CAST(ord_del_cust_dt AS DATETIME),
-        CAST(ord_est_del_dt AS DATETIME),
-        CASE 
+    -- CTE: cast all dates once, then apply cleansing rules on top
+    WITH ord_casted AS (
+        SELECT
+            CAST(ord_ord_id      AS VARCHAR(50))   AS ord_ord_id,
+            CAST(ord_cust_id     AS VARCHAR(50))   AS ord_cust_id,
+            CAST(NULLIF(TRIM(ord_status), '') AS NVARCHAR(20)) AS ord_status,
+            CAST(ord_purchase_ts    AS DATETIME)   AS ord_purchase_ts,
+            CAST(ord_approved_ts    AS DATETIME)   AS ord_approved_ts,
+            CAST(ord_del_carrier_dt AS DATETIME)   AS ord_del_carrier_dt,
+            CAST(ord_del_cust_dt    AS DATETIME)   AS ord_del_cust_dt,
+            CAST(ord_est_del_dt     AS DATETIME)   AS ord_est_del_dt
+        FROM bronze.olist_ord
+        WHERE NULLIF(TRIM(ord_status), '') IN (
+            'delivered', 'shipped', 'unavailable', 'canceled',
+            'invoiced', 'approved', 'processing', 'created'
+        )
+    ),
+    -- Data Cleansing: NULL out logically impossible timestamps
+    ord_cleansed AS (
+        SELECT
+            ord_ord_id,
+            ord_cust_id,
+            ord_status,
+            ord_purchase_ts,
+            ord_approved_ts,
+            -- Cleansing: carrier pickup before approval is impossible → NULL
+            CASE
+                WHEN ord_del_carrier_dt < ord_approved_ts THEN NULL
+                ELSE ord_del_carrier_dt
+            END AS ord_del_carrier_dt,
+            -- Cleansing: delivery before carrier pickup is impossible → NULL
+            CASE
+                WHEN ord_del_cust_dt < ord_del_carrier_dt THEN NULL
+                ELSE ord_del_cust_dt
+            END AS ord_del_cust_dt,
+            ord_est_del_dt
+        FROM ord_casted
+    )
+    INSERT INTO silver.olist_ord (ord_ord_id, ord_cust_id, ord_status, ord_purchase_ts, ord_approved_ts, ord_del_carrier_dt, ord_del_cust_dt, ord_est_del_dt, ord_is_late, delivery_lead_time)
+    SELECT
+        ord_ord_id,
+        ord_cust_id,
+        ord_status,
+        ord_purchase_ts,
+        ord_approved_ts,
+        ord_del_carrier_dt,       -- Already cleansed above
+        ord_del_cust_dt,          -- Already cleansed above
+        ord_est_del_dt,
+        -- Derived: ord_is_late (uses cleansed ord_del_cust_dt)
+        CASE
             WHEN ord_del_cust_dt IS NULL THEN NULL
             WHEN ord_est_del_dt  IS NULL THEN NULL
-            WHEN CAST(ord_est_del_dt AS DATETIME) < CAST(ord_del_cust_dt AS DATETIME)
-            THEN 1  
+            WHEN ord_est_del_dt < ord_del_cust_dt THEN 1
             ELSE 0
-        END AS ord_is_late
-    FROM bronze.olist_ord
-    -- Validation: Filter out unrecognized order statuses
-    WHERE NULLIF(TRIM(ord_status), '') IN (
-        'delivered', 'shipped', 'unavailable', 'canceled',
-        'invoiced', 'approved', 'processing', 'created'
-    );
+        END AS ord_is_late,
+        -- Derived: delivery_lead_time in days (uses cleansed ord_del_cust_dt)
+        CASE
+            WHEN ord_purchase_ts IS NOT NULL AND ord_del_cust_dt IS NOT NULL
+            THEN DATEDIFF(DAY, ord_purchase_ts, ord_del_cust_dt)
+            ELSE NULL
+        END AS delivery_lead_time
+    FROM ord_cleansed;
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();

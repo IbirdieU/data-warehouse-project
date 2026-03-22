@@ -393,16 +393,58 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 6.4: Validity (Date Logic: Purchase Date must be before Delivery Date)
-    SELECT 'silver.olist_ord', 'Validity - Timeline Consistency',
-        SUM(CASE WHEN ord_del_cust_dt < ord_purchase_ts THEN 1 ELSE 0 END),
-        CASE WHEN SUM(CASE WHEN ord_del_cust_dt < ord_purchase_ts THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
-        'Delivery date is earlier than Purchase date'
+    -- ----------------------------------------------------------------
+    -- Checks 6.4–6.7: Order Lifecycle Timeline Validation
+    -- Business flow: Purchase → Approved → Carrier Pickup → Delivered
+    -- Each check only evaluates rows where BOTH timestamps are NOT NULL.
+    -- NULL timestamps (canceled, in-transit) are silently skipped.
+    -- ----------------------------------------------------------------
+
+    -- Check 6.4: Purchase → Approved (approved_ts must be >= purchase_ts)
+    -- WARNING: clock drift or batch-processing delays can cause slight inversions
+    SELECT 'silver.olist_ord', 'Validity - Approved Date >= Purchase Date',
+        SUM(CASE WHEN ord_approved_ts < ord_purchase_ts THEN 1 ELSE 0 END),
+        CASE WHEN SUM(CASE WHEN ord_approved_ts < ord_purchase_ts THEN 1 ELSE 0 END) > 0 THEN 'WARNING' ELSE 'PASS' END,
+        'Approved timestamp is earlier than Purchase timestamp'
     FROM silver.olist_ord
+    WHERE ord_approved_ts IS NOT NULL AND ord_purchase_ts IS NOT NULL
 
     UNION ALL
 
-    -- Check 6.5: Business Logic Flag - ord_is_late (Should be 1 if delivered after estimated date)
+    -- Check 6.5: Approved → Carrier Pickup (carrier_dt must be >= approved_ts)
+    -- WARNING: carrier scan may be logged slightly before approval settles
+    SELECT 'silver.olist_ord', 'Validity - Carrier Pickup >= Approved Date',
+        SUM(CASE WHEN ord_del_carrier_dt < ord_approved_ts THEN 1 ELSE 0 END),
+        CASE WHEN SUM(CASE WHEN ord_del_carrier_dt < ord_approved_ts THEN 1 ELSE 0 END) > 0 THEN 'WARNING' ELSE 'PASS' END,
+        'Carrier pickup date is earlier than Approved timestamp'
+    FROM silver.olist_ord
+    WHERE ord_del_carrier_dt IS NOT NULL AND ord_approved_ts IS NOT NULL
+
+    UNION ALL
+
+    -- Check 6.6: Carrier Pickup → Delivered to Customer (cust_dt must be >= carrier_dt)
+    -- FAIL: delivering before the carrier picks up is physically impossible
+    SELECT 'silver.olist_ord', 'Validity - Delivered Date >= Carrier Pickup',
+        SUM(CASE WHEN ord_del_cust_dt < ord_del_carrier_dt THEN 1 ELSE 0 END),
+        CASE WHEN SUM(CASE WHEN ord_del_cust_dt < ord_del_carrier_dt THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        'Customer delivery date is earlier than Carrier pickup date'
+    FROM silver.olist_ord
+    WHERE ord_del_cust_dt IS NOT NULL AND ord_del_carrier_dt IS NOT NULL
+
+    UNION ALL
+
+    -- Check 6.7: Purchase → Estimated Delivery (est_del_dt must be >= purchase_ts)
+    -- FAIL: an estimated delivery before the purchase was placed is logically impossible
+    SELECT 'silver.olist_ord', 'Validity - Estimated Delivery >= Purchase Date',
+        SUM(CASE WHEN ord_est_del_dt < ord_purchase_ts THEN 1 ELSE 0 END),
+        CASE WHEN SUM(CASE WHEN ord_est_del_dt < ord_purchase_ts THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        'Estimated delivery date is earlier than Purchase timestamp'
+    FROM silver.olist_ord
+    WHERE ord_est_del_dt IS NOT NULL AND ord_purchase_ts IS NOT NULL
+
+    UNION ALL
+
+    -- Check 6.8: Business Logic Flag - ord_is_late (Should be 1 if delivered after estimated date)
     SELECT 'silver.olist_ord', 'Business Logic - ord_is_late Flag Accuracy',
         SUM(CASE WHEN (ord_is_late = 1 AND ord_del_cust_dt <= ord_est_del_dt) 
                   OR (ord_is_late = 0 AND ord_del_cust_dt > ord_est_del_dt) THEN 1 ELSE 0 END),
@@ -415,7 +457,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 6.6: Ghost Strings (Empty or whitespace-only strings in text columns)
+    -- Check 6.9: Ghost Strings (Empty or whitespace-only strings in text columns)
     SELECT 'silver.olist_ord', 'Format - Ghost Strings in Text Columns',
         SUM(CASE WHEN (ord_status IS NOT NULL AND LEN(TRIM(ord_status)) = 0)
                   OR (ord_cust_id IS NOT NULL AND LEN(TRIM(ord_cust_id)) = 0) THEN 1 ELSE 0 END),
@@ -427,7 +469,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 6.7: Integrity - Order Item Reference (ord_ord_id should exist in olist_ord_item)
+    -- Check 6.10: Integrity - Order Item Reference (ord_ord_id should exist in olist_ord_item)
     SELECT 'silver.olist_ord', 'Integrity - Order Item Reference (ord_ord_id)',
         COUNT(o.ord_ord_id),
         CASE WHEN COUNT(o.ord_ord_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
@@ -438,7 +480,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 6.8: Integrity - Order Payment Reference (ord_ord_id should exist in olist_ord_pay)
+    -- Check 6.11: Integrity - Order Payment Reference (ord_ord_id should exist in olist_ord_pay)
     SELECT 'silver.olist_ord', 'Integrity - Order Payment Reference (ord_ord_id)',
         COUNT(o.ord_ord_id),
         CASE WHEN COUNT(o.ord_ord_id) > 0 THEN 'WARNING' ELSE 'PASS' END,
@@ -449,7 +491,7 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- Check 6.9: Validity - Allowed Order Statuses
+    -- Check 6.12: Validity - Allowed Order Statuses
     SELECT 
         'silver.olist_ord', 'Validity - Order Status Domain',
         SUM(CASE 
@@ -645,8 +687,66 @@ WITH DQ_Report AS (
              THEN 'FAIL' ELSE 'PASS' END,
         'Category name and English name should both be NULL or both have values'
     FROM silver.olist_prd_cat_map
+
+    UNION ALL
+
+    -- ====================================================================
+    -- 10. Cross-Table: Financial Integrity (olist_ord_item vs olist_ord_pay)
+    -- ====================================================================
+    -- Business Rule:
+    --   For each order, the total paid (SUM of all payment methods) must match
+    --   the total charged (SUM of item price + freight across all order items).
+    --   A tolerance of 0.01 absorbs float rounding; anything beyond that is a
+    --   genuine discrepancy in the source data.
+    --
+    -- FULL OUTER JOIN: catches orders that exist in one table but not the other
+    --   - Order in items but not payments → customer was never charged
+    --   - Order in payments but not items → payment with no line items
+
+    -- Check 10.1: Financial Reconciliation — Item Totals vs Payment Totals
+    SELECT
+        'silver.cross_table' AS TableName,
+        'Financial Reconciliation (Item vs Payment)' AS CheckName,
+        COUNT(*) AS FailedCount,
+        CASE WHEN COUNT(*) > 0 THEN 'WARNING' ELSE 'PASS' END AS Status,
+        'Discrepancy > 0.01 detected between SUM(price + freight) and SUM(payment_value) per order' AS ErrorMsg
+    FROM (
+        -- CTE 1: Total item amount per order (price + freight for all items)
+        SELECT
+            COALESCE(item.order_id, pay.order_id) AS order_id,
+            item.total_item_amt,
+            pay.total_payment_amt
+        FROM (
+            SELECT
+                oi_ord_id                              AS order_id,
+                SUM(ISNULL(oi_price, 0) + ISNULL(oi_freight_val, 0)) AS total_item_amt
+            FROM silver.olist_ord_item
+            GROUP BY oi_ord_id
+        ) item
+        -- FULL OUTER JOIN to catch orphaned orders on either side
+        FULL OUTER JOIN (
+            SELECT
+                op_ord_id                              AS order_id,
+                SUM(ISNULL(op_pay_val, 0))             AS total_payment_amt
+            FROM silver.olist_ord_pay
+            GROUP BY op_ord_id
+        ) pay
+            ON item.order_id = pay.order_id
+        -- Filter: only keep orders with a material discrepancy
+        WHERE ABS(
+                ISNULL(item.total_item_amt,    0) -
+                ISNULL(pay.total_payment_amt,  0)
+              ) > 0.01
+    ) mismatched_orders
 )
 
 SELECT * FROM DQ_Report
-ORDER BY Status DESC, TableName, CheckName
+ORDER BY
+    CASE Status
+        WHEN 'FAIL'    THEN 1   -- Hard failures first
+        WHEN 'WARNING' THEN 2   -- Soft warnings second
+        ELSE                3   -- PASS last
+    END,
+    TableName,
+    CheckName;
 
