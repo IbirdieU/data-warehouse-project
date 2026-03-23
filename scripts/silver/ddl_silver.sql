@@ -11,11 +11,6 @@ Script Purpose:
 
 USE RetailWarehouse;
 
--- Create the silver schema if it does not already exist.
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'silver')
-    EXEC('CREATE SCHEMA silver');
-GO
-
 -- 1.customers
 IF OBJECT_ID('silver.olist_cust', 'U') IS NOT NULL
     DROP TABLE silver.olist_cust;
@@ -187,24 +182,3 @@ CREATE TABLE silver.olist_prd_cat_map (
     CONSTRAINT PK_olist_prd_cat_map PRIMARY KEY (pcm_cat_name)
 );
 GO
-
--- 10. load log
-IF OBJECT_ID('silver.load_log', 'U') IS NOT NULL
-    DROP TABLE silver.load_log;
-GO
-
-CREATE TABLE silver.load_log (
-    log_id          INT IDENTITY(1,1)   NOT NULL,
-    batch_id        UNIQUEIDENTIFIER    NOT NULL,   
-    table_name      NVARCHAR(100)       NOT NULL,
-    rows_inserted   INT                 NOT NULL,
-    load_duration_s DECIMAL(6,2)        NOT NULL,
-    load_status     NVARCHAR(10)        NOT NULL,   -- 'SUCCESS' / 'FAILED'
-    error_message   NVARCHAR(MAX)       NULL,
-    dwh_create_date DATETIME2           DEFAULT GETDATE()
-
-    CONSTRAINT PK_load_log PRIMARY KEY (log_id)
-);
-GO
-
-

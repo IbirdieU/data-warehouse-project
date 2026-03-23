@@ -125,6 +125,7 @@ SELECT
     review_score,                                   -- Customer rating (1-5, NULL if no review)
 
     -- Delivery performance
-    is_late                                         -- Late delivery flag (1=late, 0=on time)
+    is_late,                                        -- Late delivery flag (1=late, 0=on time)
+    delivery_lead_time                              -- Days between purchase and customer delivery (NULL if not delivered)
 FROM gold.fact_sales;
 GO

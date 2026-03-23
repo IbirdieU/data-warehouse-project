@@ -18,14 +18,6 @@ USE RetailWarehouse;
 GO
 
 -- =============================================================================
--- 0. Schema
--- Create the gold schema if it does not already exist.
--- =============================================================================
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'gold')
-    EXEC('CREATE SCHEMA gold');
-GO
-
--- =============================================================================
 -- 1. Drop existing objects
 --    Fact first (holds FK references), then dimensions.
 -- =============================================================================
@@ -204,6 +196,7 @@ CREATE TABLE gold.fact_sales (
 
     -- Measures — Delivery Performance
     is_late                 BIT                       NULL,        -- Delivery flag derived in silver layer: 1 = actual delivery exceeded estimated date, 0 = on time or early
+    delivery_lead_time      INT                       NULL,        -- Days between purchase and customer delivery (silver: delivery_lead_time); NULL if not yet delivered
 
     -- Metadata
     dwh_create_date         DATETIME2     DEFAULT GETDATE() NOT NULL,  -- Timestamp when this record was inserted into the gold layer

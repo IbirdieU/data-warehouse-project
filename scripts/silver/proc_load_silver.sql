@@ -10,7 +10,7 @@ Script Purpose:
 		- Inserts transformed and cleaned data from Bronze into Silver tables
 ===============================================================================
 Usage Example :
-    "EXEC silver.load_silver"
+    EXEC silver.load_silver
 ===============================================================================
 */
 USE RetailWarehouse;
@@ -19,8 +19,10 @@ GO
 CREATE OR ALTER PROCEDURE silver.load_silver AS
 BEGIN
     BEGIN TRY
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON; --Auto Rollback
     DECLARE @start_time DATETIME, @end_time DATETIME, @batch_start_time DATETIME, @batch_end_time DATETIME;
-    DECLARE @batch_id UNIQUEIDENTIFIER = NEWID(), @rows_inserted INT;
+    DECLARE @rows_inserted INT, @log_id INT;
     SET @batch_start_time = GETDATE();
     PRINT '================================================';
     PRINT 'Loading Silver Layer...';
@@ -32,6 +34,9 @@ BEGIN
     BEGIN TRANSACTION;
 
     -- ========== TABLE 1: silver.olist_geo ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_geo', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_geo';
 	TRUNCATE TABLE silver.olist_geo;
@@ -82,16 +87,16 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_geo', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
 
     -- ========== TABLE 2: silver.olist_cust ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_cust', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
 	PRINT '>>>  Truncating Table: silver.olist_cust';
 	TRUNCATE TABLE silver.olist_cust;
@@ -116,16 +121,16 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_cust', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
-    
+
     -- ========== TABLE 3: silver.olist_ord_item ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_ord_item', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_ord_item';
 	TRUNCATE TABLE silver.olist_ord_item;
@@ -147,16 +152,16 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_ord_item', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
-    
+
     -- ========== TABLE 4: silver.olist_ord_pay ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_ord_pay', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_ord_pay';
 	TRUNCATE TABLE silver.olist_ord_pay;
@@ -178,16 +183,16 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_ord_pay', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
-    
+
     -- ========== TABLE 5: silver.olist_ord_rev ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_ord_rev', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_ord_rev';
 	TRUNCATE TABLE silver.olist_ord_rev;
@@ -210,16 +215,16 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_ord_rev', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
-    
+
     -- ========== TABLE 6: silver.olist_ord ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_ord', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_ord';
 	TRUNCATE TABLE silver.olist_ord;
@@ -290,16 +295,16 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_ord', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
-    
+
     -- ========== TABLE 7: silver.olist_prd ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_prd', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_prd';
 	TRUNCATE TABLE silver.olist_prd;
@@ -323,16 +328,16 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_prd', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
-    PRINT '>>> Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
+    PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
-   
+
     -- ========== TABLE 8: silver.olist_sel ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_sel', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_sel';
 	TRUNCATE TABLE silver.olist_sel;
@@ -356,16 +361,16 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_sel', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
     PRINT '>>>  -------------';
-    
+
     -- ========== TABLE 9: silver.olist_prd_cat_map ==========
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status)
+    VALUES ('olist_prd_cat_map', 'bronze', 'silver', 'RUNNING');
+    SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
     PRINT '>>>  Truncating Table: silver.olist_prd_cat_map';
 	TRUNCATE TABLE silver.olist_prd_cat_map;
@@ -380,10 +385,7 @@ BEGIN
 
     SET @rows_inserted = @@ROWCOUNT;
     SET @end_time = GETDATE();
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'olist_prd_cat_map', @rows_inserted, 
-            CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)),
-            'SUCCESS', NULL);
+    UPDATE logging.load_log SET status = 'SUCCESS', end_ts = @end_time, rows_inserted = @rows_inserted WHERE log_id = @log_id;
 
     PRINT '>>>  Rows Inserted: ' + CAST(@rows_inserted AS VARCHAR(20));
     PRINT '>>>  Load Duration: ' + CAST(CAST(DATEDIFF(MILLISECOND, @start_time, @end_time) / 1000.0 AS DECIMAL(6,2)) AS VARCHAR(50)) + ' seconds';
@@ -417,10 +419,8 @@ BEGIN
 	PRINT 'Error State: ' + CAST (ERROR_STATE() AS VARCHAR(50));
 	PRINT '=========================================='
 
-    INSERT INTO silver.load_log (batch_id, table_name, rows_inserted, load_duration_s, load_status, error_message)
-    VALUES (@batch_id, 'PROCEDURE_EXECUTION', 0, 
-            CAST(DATEDIFF(MILLISECOND, @batch_start_time, GETDATE()) / 1000.0 AS DECIMAL(6,2)),
-            'FAILED', ERROR_MESSAGE());
+    INSERT INTO logging.load_log (process_name, source_layer, target_layer, status, end_ts, rows_inserted, error_message)
+    VALUES ('SILVER_PROCEDURE', 'bronze', 'silver', 'FAILED', GETDATE(), 0, ERROR_MESSAGE());
     END CATCH
 END
 GO
