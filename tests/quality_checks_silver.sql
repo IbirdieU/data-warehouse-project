@@ -700,8 +700,6 @@ WITH DQ_Report AS (
     --   genuine discrepancy in the source data.
     --
     -- FULL OUTER JOIN: catches orders that exist in one table but not the other
-    --   - Order in items but not payments → customer was never charged
-    --   - Order in payments but not items → payment with no line items
 
     -- Check 10.1: Financial Reconciliation — Item Totals vs Payment Totals
     SELECT
@@ -711,7 +709,7 @@ WITH DQ_Report AS (
         CASE WHEN COUNT(*) > 0 THEN 'WARNING' ELSE 'PASS' END AS Status,
         'Discrepancy > 0.01 detected between SUM(price + freight) and SUM(payment_value) per order' AS ErrorMsg
     FROM (
-        -- CTE 1: Total item amount per order (price + freight for all items)
+        -- Total item amount per order (price + freight for all items)
         SELECT
             COALESCE(item.order_id, pay.order_id) AS order_id,
             item.total_item_amt,

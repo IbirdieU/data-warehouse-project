@@ -105,6 +105,9 @@ BEGIN
         VALUES ('dim_date', 'generated', 'gold', 'RUNNING');
         SET @log_id = SCOPE_IDENTITY();
         SET @start_time = GETDATE();
+        PRINT '================================================';
+        PRINT 'Step 1: Loading gold.dim_date';
+        PRINT '================================================';
         PRINT '>>>  Inserting Data Into: gold.dim_date';
 
         WITH date_series AS (
@@ -179,6 +182,9 @@ BEGIN
     VALUES ('dim_customers', 'silver', 'gold', 'RUNNING');
     SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
+    PRINT '================================================';
+    PRINT 'Step 2: Loading gold.dim_customers';
+    PRINT '================================================';
     PRINT '>>>  Inserting Data Into: gold.dim_customers';
 
     INSERT INTO gold.dim_customers (
@@ -224,6 +230,9 @@ BEGIN
     VALUES ('dim_products', 'silver', 'gold', 'RUNNING');
     SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
+    PRINT '================================================';
+    PRINT 'Step 3: Loading gold.dim_products';
+    PRINT '================================================';
     PRINT '>>>  Inserting Data Into: gold.dim_products';
 
     INSERT INTO gold.dim_products (
@@ -274,6 +283,9 @@ BEGIN
     VALUES ('dim_sellers', 'silver', 'gold', 'RUNNING');
     SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
+    PRINT '================================================';
+    PRINT 'Step 4: Loading gold.dim_sellers';
+    PRINT '================================================';
     PRINT '>>>  Inserting Data Into: gold.dim_sellers';
 
     INSERT INTO gold.dim_sellers (
@@ -307,7 +319,7 @@ BEGIN
     --   INNER  gold.dim_products         → resolve product_sk  via product_id  = oi_prd_id
     --   INNER  gold.dim_sellers          → resolve seller_sk   via seller_id   = oi_sel_id
     --   INNER  gold.dim_date             → resolve purchase_date_sk via YYYYMMDD date_id
-    --   LEFT   payment subquery          → order-level total via window SUM + DISTINCT
+    --   LEFT   payment subquery          → order-level total via GROUP BY + SUM
     --   LEFT   review subquery           → latest review score per order via ROW_NUMBER
     --
     -- Join type rationale:
@@ -320,9 +332,8 @@ BEGIN
     --
     -- Payment logic:
     --   silver.olist_ord_pay has one row per payment instrument per order
-    --   (e.g., credit card + voucher = 2 rows). The window function
-    --   SUM(op_pay_val) OVER (PARTITION BY op_ord_id) stamps the order total
-    --   on every payment row. DISTINCT then collapses to one row per order_id,
+    --   (e.g., credit card + voucher = 2 rows). GROUP BY op_ord_id with
+    --   SUM(op_pay_val) collapses all payment rows into one row per order,
     --   which LEFT JOINs cleanly to the item grain.
     --
     -- Review logic:
@@ -335,6 +346,9 @@ BEGIN
     VALUES ('fact_sales', 'silver', 'gold', 'RUNNING');
     SET @log_id = SCOPE_IDENTITY();
     SET @start_time = GETDATE();
+    PRINT '================================================';
+    PRINT 'Step 5: Loading gold.fact_sales';
+    PRINT '================================================';
     PRINT '>>>  Inserting Data Into: gold.fact_sales';
 
     INSERT INTO gold.fact_sales (
@@ -399,15 +413,14 @@ BEGIN
         ON dd.date_id = CAST(FORMAT(o.ord_purchase_ts, 'yyyyMMdd') AS INT)
 
     -- Payment aggregation:
-    --   SUM(op_pay_val) OVER (PARTITION BY op_ord_id) computes the order total
-    --   across all payment methods without collapsing rows.
-    --   DISTINCT then reduces the result to exactly one row per order_id,
-    --   making the LEFT JOIN safe against multiplying fact rows.
+    --   GROUP BY op_ord_id collapses all payment methods into one row per order,
+    --   SUM(op_pay_val) computes the order-level total across all payment methods.
     LEFT JOIN (
-        SELECT DISTINCT
+        SELECT
             op_ord_id,
-            SUM(op_pay_val) OVER (PARTITION BY op_ord_id) AS total_payment_value
+            SUM(op_pay_val) AS total_payment_value
         FROM silver.olist_ord_pay
+        GROUP BY op_ord_id
     ) pay
         ON pay.op_ord_id = oi.oi_ord_id
 
