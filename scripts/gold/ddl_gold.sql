@@ -32,23 +32,24 @@ GO
 
 
 -- =============================================================================
--- 2. Dimension: gold.dim_customers
---    Source : silver.olist_cust
---    Grain  : one row per cst_cust_id (unique per order in Olist model)
+-- 2. Dimension: gold.dim_customers  (Identity Resolution)
+--    Source : silver.olist_cust  JOIN  silver.olist_ord
+--    Grain  : one row per unique person (customer_unique_id)
+--    Logic  : ROW_NUMBER() picks the latest order per person (by purchase_ts DESC)
+--             so zip_code_prefix, city, state reflect the customer's Current Location.
 -- =============================================================================
 CREATE TABLE gold.dim_customers (
     -- Surrogate Key
     customer_sk         INT          IDENTITY(1,1) NOT NULL,  -- System-generated surrogate PK; stable across source changes
 
     -- Natural Key
-    customer_id         VARCHAR(50)               NOT NULL,   -- NK: maps one-to-one with cst_cust_id; unique per order, not per real-world buyer
-    
-    -- Descriptive Attributes
-    customer_unique_id  VARCHAR(50)               NULL,       -- Persistent buyer identifier that groups all orders by the same real-world customer (cst_cust_unique_id)
-    zip_code_prefix     CHAR(5)                   NULL,       -- First 5 digits of the customer's postal / ZIP code
-    city                NVARCHAR(100)             NULL,       -- Standardised city name (silver column: cst_city_std)
-    state               CHAR(2)                   NULL,       -- Brazilian state abbreviation, e.g. SP, RJ, MG
-    
+    customer_unique_id  VARCHAR(50)               NOT NULL,   -- NK: persistent buyer identifier — one row per real-world person
+
+    -- Descriptive Attributes (Current Location — from the customer's most recent order)
+    zip_code_prefix     CHAR(5)                   NULL,       -- First 5 digits of the customer's latest shipping ZIP code
+    city                NVARCHAR(100)             NULL,       -- Standardised city name from the latest order (silver: cst_city_std)
+    state               CHAR(2)                   NULL,       -- Brazilian state abbreviation from the latest order, e.g. SP, RJ, MG
+
     -- Metadata
     dwh_create_date     DATETIME2    DEFAULT GETDATE() NOT NULL,  -- Timestamp when this record was inserted into the gold layer
 
@@ -163,6 +164,7 @@ GO
 -- 6. Fact Table: gold.fact_sales
 --    Source  : silver.olist_ord_item  (grain driver — one row per order item)
 --              silver.olist_ord       (order header: dates, status, is_late)
+--              silver.olist_cust      (shipping location: Point-in-Time DD)
 --              silver.olist_ord_pay   (payments: SUM aggregated to order level)
 --              silver.olist_ord_rev   (review score: one review per order)
 --    Grain   : one row per order item  (order_id + order_item_id)
@@ -171,10 +173,15 @@ CREATE TABLE gold.fact_sales (
     -- Surrogate Key
     sale_sk                 INT           IDENTITY(1,1) NOT NULL,  -- System-generated surrogate PK; uniquely identifies each fact row
     
-    -- Degenerate Dimensions (natural keys kept for traceability, no dim table)
+    -- Degenerate Dimensions — Order (natural keys kept for traceability, no dim table)
     order_id                VARCHAR(50)               NOT NULL,    -- Degenerate dimension: original order hash from the source system (oi_ord_id)
     order_item_id           INT                       NOT NULL,    -- Degenerate dimension: sequential item number within the order (1-based, oi_ord_item_id)
     order_status            NVARCHAR(20)              NULL,        -- Order lifecycle status at load time (e.g. delivered, shipped, canceled)
+
+    -- Degenerate Dimensions — Shipping Location (Point-in-Time)
+    shipping_zip_code_prefix CHAR(5)                  NULL,        -- ZIP code prefix of the shipping address for this specific order
+    shipping_city            NVARCHAR(100)             NULL,        -- City of the shipping address (standardized via silver.olist_cust.cst_city_std)
+    shipping_state           CHAR(2)                   NULL,        -- State abbreviation of the shipping address (e.g. SP, RJ, MG)
 
     -- Foreign Keys → Dimension Surrogate Keys
     customer_sk             INT                       NOT NULL,    -- FK → gold.dim_customers.customer_sk; identifies the purchasing customer
@@ -206,7 +213,7 @@ CREATE TABLE gold.fact_sales (
 
     -- Logical Foreign Key constraints
     -- These document the Star Schema relationships and are enforced by SQL Server.
-    -- If ETL load order cannot guarantee dimension rows exist first, add WITH NOCHECK.
+    -- If ELT load order cannot guarantee dimension rows exist first, add WITH NOCHECK.
     CONSTRAINT FK_fact_sales_customer  FOREIGN KEY (customer_sk)      REFERENCES gold.dim_customers (customer_sk),
     CONSTRAINT FK_fact_sales_product   FOREIGN KEY (product_sk)       REFERENCES gold.dim_products  (product_sk),
     CONSTRAINT FK_fact_sales_seller    FOREIGN KEY (seller_sk)        REFERENCES gold.dim_sellers   (seller_sk),

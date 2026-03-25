@@ -29,11 +29,10 @@ GO
 CREATE OR ALTER VIEW gold.view_dim_customers AS
 SELECT
     customer_sk,                                    -- Surrogate key (PK for BI relationships)
-    customer_id,                                    -- Business key: unique per order
-    customer_unique_id,                             -- Persistent buyer ID across orders
-    zip_code_prefix     AS zip_code,                -- Postal code (5 digits)
-    city                AS customer_city,            -- Customer city (standardised)
-    state               AS customer_state            -- Brazilian state abbreviation
+    customer_unique_id,                             -- NK: one row per real-world person
+    zip_code_prefix     AS zip_code,                -- Latest shipping ZIP code (5 digits)
+    city                AS customer_city,            -- Latest customer city (standardised)
+    state               AS customer_state            -- Latest Brazilian state abbreviation
 FROM gold.dim_customers;
 GO
 
@@ -105,10 +104,15 @@ SELECT
     -- Primary key
     sale_sk,                                        -- Surrogate key (PK)
 
-    -- Degenerate dimensions (traceability)
+    -- Degenerate dimensions — Order
     order_id,                                       -- Order identifier
     order_item_id,                                  -- Item sequence within order (1-based)
     order_status,                                   -- Order lifecycle status
+
+    -- Degenerate dimensions — Shipping Location (Point-in-Time)
+    shipping_zip_code_prefix,                       -- ZIP code of shipping address for this order
+    shipping_city,                                  -- City of shipping address
+    shipping_state,                                 -- State of shipping address
 
     -- Foreign keys (BI relationship mapping)
     customer_sk,                                    -- FK -> view_dim_customers

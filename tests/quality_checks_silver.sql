@@ -22,7 +22,7 @@ WITH DQ_Report AS (
     FROM silver.olist_cust
 
     UNION ALL
-
+    
     -- Check 1.2: Uniqueness on Primary Key (cst_cust_id)
     SELECT 'silver.olist_cust', 'Uniqueness - PK cst_cust_id',
         COUNT(*) - COUNT(DISTINCT cst_cust_id),

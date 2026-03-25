@@ -358,7 +358,7 @@ WITH DQ_Report AS (
     SELECT 'gold.fact_sales', 'Validity', 'Data Freshness (< 24 hours)',
         DATEDIFF(HOUR, MAX(dwh_create_date), GETDATE()),
         CASE WHEN MAX(dwh_create_date) < DATEADD(HOUR, -24, GETDATE()) THEN 'WARNING' ELSE 'PASS' END,
-        'Most recent load in fact_sales is older than 24 hours — ETL pipeline may not have run'
+        'Most recent load in fact_sales is older than 24 hours — ELT pipeline may not have run'
     FROM gold.fact_sales
 
     UNION ALL

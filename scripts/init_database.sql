@@ -44,7 +44,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'logging')
 GO
 
 -- =============================================================================
--- Centralized ETL Load Log
+-- Centralized ELT Load Log
 -- Pattern: INSERT (RUNNING) at start → UPDATE (SUCCESS/FAILED) at end
 -- Duration: derived from end_ts - start_ts
 -- =============================================================================
