@@ -55,19 +55,19 @@ WITH DQ_Report AS (
     UNION ALL
 
     -- 1.3: NK must not be NULL
-    SELECT 'gold.dim_customers', 'Completeness', 'NK customer_id',
-        SUM(CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END),
-        CASE WHEN SUM(CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
-        'Natural key customer_id contains NULL values'
+    SELECT 'gold.dim_customers', 'Completeness', 'NK customer_unique_id',
+        SUM(CASE WHEN customer_unique_id IS NULL THEN 1 ELSE 0 END),
+        CASE WHEN SUM(CASE WHEN customer_unique_id IS NULL THEN 1 ELSE 0 END) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        'Natural key customer_unique_id contains NULL values'
     FROM gold.dim_customers
 
     UNION ALL
 
     -- 1.4: NK must be unique (prevents fan-out on fact joins)
-    SELECT 'gold.dim_customers', 'Uniqueness', 'NK customer_id (Fan-out Guard)',
-        COUNT(*) - COUNT(DISTINCT customer_id),
-        CASE WHEN COUNT(*) - COUNT(DISTINCT customer_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
-        'Duplicate customer_id found — fact joins will fan-out and inflate financial totals'
+    SELECT 'gold.dim_customers', 'Uniqueness', 'NK customer_unique_id (Fan-out Guard)',
+        COUNT(*) - COUNT(DISTINCT customer_unique_id),
+        CASE WHEN COUNT(*) - COUNT(DISTINCT customer_unique_id) > 0 THEN 'FAIL' ELSE 'PASS' END,
+        'Duplicate customer_unique_id found — fact joins will fan-out and inflate financial totals'
     FROM gold.dim_customers
 
     UNION ALL
@@ -363,46 +363,47 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-    -- ====================================================================
-    -- 6. Reconciliation: Gold vs. Silver
-    -- ====================================================================
-
-    -- 6.1: Row Count — fact_sales vs. silver.olist_ord_item
-    -- INNER JOINs in proc_load_gold exclude unmatched rows, so a difference
-    -- is expected for dirty source data. Monitored as WARNING, not FAIL.
+   -- Check 6.1: Financial Reconciliation — Item Totals vs Payment Totals (Silver to Gold Verification)
     SELECT
-        'gold vs silver', 'Reconciliation', 'Row Count (fact_sales vs olist_ord_item)',
-        ABS(
-            (SELECT COUNT(*) FROM gold.fact_sales) -
-            (SELECT COUNT(*) FROM silver.olist_ord_item)
-        ),
-        CASE WHEN ABS(
-                (SELECT COUNT(*) FROM gold.fact_sales) -
-                (SELECT COUNT(*) FROM silver.olist_ord_item)
-             ) > 0 THEN 'WARNING' ELSE 'PASS' END,
-        'Row count differs between gold.fact_sales and silver.olist_ord_item — review INNER JOIN exclusions'
-    FROM (SELECT 1 AS x) t
-
-    UNION ALL
-
-    -- 6.2: Financial — SUM(price) must match SUM(oi_price)
-    -- Unlike row count, a price mismatch cannot be explained by JOIN exclusions
-    -- alone — it means rows were dropped or prices mutated. Hard FAIL.
-    SELECT
-        'gold vs silver', 'Reconciliation', 'SUM(price) vs SUM(oi_price)',
-        CAST(ABS(
-            ISNULL((SELECT SUM(price)    FROM gold.fact_sales),       0) -
-            ISNULL((SELECT SUM(oi_price) FROM silver.olist_ord_item), 0)
-        ) AS INT),
-        CASE WHEN ABS(
-                ISNULL((SELECT SUM(price)    FROM gold.fact_sales),       0) -
-                ISNULL((SELECT SUM(oi_price) FROM silver.olist_ord_item), 0)
-             ) > 0 THEN 'FAIL' ELSE 'PASS' END,
-        'Total price sum differs between gold.fact_sales and silver.olist_ord_item'
-    FROM (SELECT 1 AS x) t
-
+        'gold.fact_sales' AS TableName, -- หรือใช้ 'gold.cross_table' ตามที่คุณต้องการ
+        'Reconciliation'  AS CheckCategory,
+        'Financial Reconciliation (Item vs Payment)' AS CheckName,
+        COUNT(*)          AS FailedCount,
+        CASE 
+            WHEN COUNT(*) > 0 THEN 'WARNING' 
+            ELSE 'PASS' 
+        END AS Status,
+        'Found ' + CAST(COUNT(*) AS VARCHAR) + ' orders with discrepancy > 0.01 (includes orphans and rounding errors)' AS ErrorMsg
+    FROM (
+        SELECT
+            COALESCE(item.order_id, pay.order_id) AS order_id,
+            item.total_item_amt,
+            pay.total_payment_amt
+        FROM (
+            -- Aggregate totals from Silver Items
+            SELECT
+                oi_ord_id AS order_id,
+                SUM(ISNULL(oi_price, 0) + ISNULL(oi_freight_val, 0)) AS total_item_amt
+            FROM silver.olist_ord_item
+            GROUP BY oi_ord_id
+        ) item
+        -- FULL OUTER JOIN to capture all records from both sides
+        FULL OUTER JOIN (
+            -- Aggregate totals from Silver Payments
+            SELECT
+                op_ord_id AS order_id,
+                SUM(ISNULL(op_pay_val, 0)) AS total_payment_amt
+            FROM silver.olist_ord_pay
+            GROUP BY op_ord_id
+        ) pay
+            ON item.order_id = pay.order_id
+        -- Logic to catch both missing links (Orphans) and price differences (Mismatches)
+        WHERE ABS(
+                ISNULL(item.total_item_amt, 0) - 
+                ISNULL(pay.total_payment_amt, 0)
+              ) > 0.01
+    ) mismatched_orders
 )
-
 SELECT * FROM DQ_Report
 ORDER BY
     CASE Status

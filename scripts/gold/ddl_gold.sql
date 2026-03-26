@@ -8,9 +8,6 @@ Source     : silver schema
 Architecture:
     Dimensions : dim_date | dim_customers | dim_products | dim_sellers
     Fact       : fact_sales  (grain: one row per order item)
-
-Change Log:
-    2026-03-11  Initial physical-table implementation (Star Schema)
 ===============================================================================
 */
 
@@ -212,8 +209,6 @@ CREATE TABLE gold.fact_sales (
     CONSTRAINT UQ_fact_sales_grain  UNIQUE      (order_id, order_item_id),   -- Enforces grain integrity: exactly one row per order item
 
     -- Logical Foreign Key constraints
-    -- These document the Star Schema relationships and are enforced by SQL Server.
-    -- If ELT load order cannot guarantee dimension rows exist first, add WITH NOCHECK.
     CONSTRAINT FK_fact_sales_customer  FOREIGN KEY (customer_sk)      REFERENCES gold.dim_customers (customer_sk),
     CONSTRAINT FK_fact_sales_product   FOREIGN KEY (product_sk)       REFERENCES gold.dim_products  (product_sk),
     CONSTRAINT FK_fact_sales_seller    FOREIGN KEY (seller_sk)        REFERENCES gold.dim_sellers   (seller_sk),

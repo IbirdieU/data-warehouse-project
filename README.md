@@ -16,6 +16,28 @@ The pipeline is fully automated through **Stored Procedures** with centralized l
 
 ---
 
+## Data Flow Architecture
+
+Data moves through three layers following the **Medallion Architecture** pattern. Each layer adds a level of refinement, transforming raw source files into analytics-ready tables.
+
+1. **Bronze** — Raw CSV files are bulk-loaded into SQL Server with no transformation. The data is an exact replica of the source.
+2. **Silver** — Stored Procedures clean, type-cast, standardize, and deduplicate the data. This layer is the single version of truth.
+3. **Gold** — Silver tables are joined and reshaped into a **Star Schema** optimized for Power BI and analytical queries.
+
+![Data Flow Architecture](./docs/data_flow.png)
+
+---
+
+## Data Model
+
+The Gold layer implements a **Star Schema** following the Kimball methodology. A central `fact_sales` table (grain: one row per order item) connects to four dimension tables via surrogate key relationships.
+
+This design enables efficient slicing and dicing across customers, products, sellers, and time — providing fast, intuitive queries for BI tools like Power BI without requiring complex multi-table joins at report time.
+
+![Gold Layer ERD](./docs/data_model.png)
+
+---
+
 ## Naming Conventions
 
 Consistent naming makes the warehouse easier to navigate and maintain. Each layer follows a clear rule:
@@ -174,41 +196,48 @@ The Gold Layer is the business-level data representation, structured using a **S
 
 ---
 
-## Technical Highlights
+## Data Schema
 
-### Centralized Logging
+The following diagram provides a high-level view of the table structures across all layers. Column names, data types, and key constraints are defined to ensure data consistency and optimal query performance throughout the warehouse.
 
-ELT operations are tracked in a **dedicated `logging` schema**, keeping operational metadata completely separate from business data.
+![Data Schema Definition](./docs/data_schema.png)
 
-- Every table load records a `RUNNING` status at start, then updates to `SUCCESS` or `FAILED` on completion.
-- Columns include `process_name`, `source_layer`, `target_layer`, `rows_inserted`, `start_ts`, `end_ts`, and `error_message`.
-- **Why:** Isolating logs from business schemas prevents accidental coupling and gives a single place to monitor pipeline health across all layers.
+---
 
-### Transaction Safety
+## Data Quality Audit Evidence
 
-All Stored Procedures use **`SET XACT_ABORT ON`** combined with **`BEGIN TRANSACTION`** / **`COMMIT`** / **`ROLLBACK`**.
+We perform automated Data Quality audits on both the Silver and Gold layers to ensure data integrity and business logic compliance.
 
-- If any single statement fails, the entire batch is rolled back automatically — no partial loads.
-- **Why:** This guarantees **ACID compliance**. The Gold layer is either fully refreshed or left completely untouched, preventing data corruption and inconsistent analytics.
+### Check Categories
 
-### Data Quality — Financial Reconciliation
+Every validation rule falls into one of three categories:
 
-A cross-table validation compares **`SUM(price + freight)`** from `olist_ord_item` against **`SUM(payment_value)`** from `olist_ord_pay` at the order level.
+| Category | Purpose |
+|---|---|
+| **Schema & Integrity** | Validates the structural health of each table — Primary Key uniqueness, NOT NULL constraints, Foreign Key referential integrity, and data type compliance. |
+| **Business Logic** | Verifies that data follows real-world e-commerce rules — e.g., delivery dates must not precede order dates, review scores must fall within 1–5, and financial measures must be non-negative. |
+| **Financial Reconciliation** | A cross-layer audit comparing Silver and Gold to ensure all financial aggregates (`SUM(Price + Freight)` vs. `SUM(Payments)`) are fully accounted for at the order level. |
 
-- A tolerance of **0.01** is applied to absorb floating-point rounding differences.
-- Any order exceeding this threshold is flagged for investigation.
-- **Why:** Financial figures must reconcile. Even small discrepancies, if left unchecked, compound across thousands of orders and erode trust in the data.
+### Unified Reporting Schema
 
-### Data Healing — Impossible Timestamps
+Both audit scripts produce a unified result set with the following columns:
 
-During profiling, **23 rows** were discovered where the delivery date occurred **before** the purchase date — a chronological impossibility.
+| Column | Description |
+|---|---|
+| `TableName` | The table being audited. |
+| `CheckName` | Descriptive name of the validation rule. |
+| `FailedCount` | Number of records that triggered a flag. |
+| `Status` | Verdict: `PASS`, `WARNING`, or `FAIL`. |
+| `ErrorMsg` | Context about the detected issue. |
 
-Rather than deleting these rows (which would lose other valid fields), the Silver layer **heals** the data:
+### Silver Layer DQ Audit Results
 
-1. The impossible timestamp is set to `NULL` (it cannot be trusted).
-2. Derived columns like `delivery_lead_time` and `ord_is_late` gracefully return `NULL` instead of producing misleading negative values.
+![Silver_DQ_Report_Part1](./docs/screenshots/silver_dq_p1.png)
+![Silver_DQ_Report_Part2](./docs/screenshots/silver_dq_p2.png)
 
-- **Why:** Silently propagating bad dates would distort delivery KPIs. Setting them to `NULL` preserves the row while clearly signaling "this value is unknown" — protecting downstream analytics from invisible errors.
+### Gold Layer DQ Audit Results
+
+![Gold_DQ_Report](./docs/screenshots/gold_dq.png)
 
 ---
 
@@ -217,6 +246,11 @@ Rather than deleting these rows (which would lose other valid fields), the Silve
 ```
 data-warehouse-project/
 ├── datasets/                  # Source CSV files (Olist dataset)
+├── docs/
+│   ├── data_flow.png          # Medallion Architecture diagram
+│   ├── data_model.png         # Gold layer Star Schema ERD
+│   ├── data_schema.png        # Table structure overview
+│   └── screenshots/           # SSMS audit result screenshots
 ├── scripts/
 │   ├── init_database.sql      # Database, schemas, and logging table
 │   ├── bronze/

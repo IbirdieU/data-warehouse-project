@@ -703,10 +703,10 @@ WITH DQ_Report AS (
 
     -- Check 10.1: Financial Reconciliation — Item Totals vs Payment Totals
     SELECT
-        'silver.cross_table' AS TableName,
-        'Financial Reconciliation (Item vs Payment)' AS CheckName,
-        COUNT(*) AS FailedCount,
-        CASE WHEN COUNT(*) > 0 THEN 'WARNING' ELSE 'PASS' END AS Status,
+        'silver.cross_table',
+        'Financial Reconciliation (Item vs Payment)',
+        COUNT(*),
+        CASE WHEN COUNT(*) > 0 THEN 'WARNING' ELSE 'PASS' END,
         'Discrepancy > 0.01 detected between SUM(price + freight) and SUM(payment_value) per order' AS ErrorMsg
     FROM (
         -- Total item amount per order (price + freight for all items)
