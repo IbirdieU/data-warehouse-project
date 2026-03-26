@@ -12,7 +12,7 @@ Data flows through three layers:
 | **Silver** | `silver` | Cleaned, typed, and standardized — the "single version of truth." |
 | **Gold** | `gold` | Star Schema optimized for analytics and reporting. |
 
-The pipeline is fully automated through **Stored Procedures** with centralized logging, transaction safety, and built-in data quality checks.
+The pipeline is executed manually through **Python scripts** and **T-SQL Stored Procedures** with centralized logging, transaction safety, and data quality checks.
 
 ---
 
@@ -206,7 +206,7 @@ The following diagram provides a high-level view of the table structures across 
 
 ## Data Quality Audit Evidence
 
-We perform automated Data Quality audits on both the Silver and Gold layers to ensure data integrity and business logic compliance.
+Data Quality audits are performed on both the Silver and Gold layers to ensure data integrity and business logic compliance.
 
 ### Data Quality Check Categories
 
@@ -254,7 +254,8 @@ data-warehouse-project/
 ├── scripts/
 │   ├── init_database.sql      # Database, schemas, and logging table
 │   ├── bronze/
-│   │   └── proc_load_bronze.sql
+│   │   ├── ddl_bronze.sql        # Bronze table definitions
+│   │   └── main_ingestion.py     # Python script for CSV to Bronze ingestion
 │   ├── silver/
 │   │   ├── ddl_silver.sql     # Silver table definitions
 │   │   └── proc_load_silver.sql
@@ -272,7 +273,7 @@ data-warehouse-project/
 ## How to Run
 
 1. Execute **`init_database.sql`** to create the database, schemas, and logging table.
-2. Load raw CSVs into the `bronze` schema (via `proc_load_bronze` or bulk insert).
+2. Run **`main_ingestion.py`** to load raw CSVs into the `bronze` schema.
 3. Run **`EXEC silver.load_silver`** to clean and load the Silver layer.
 4. Run **`EXEC gold.load_gold`** to build the Star Schema in the Gold layer.
 5. Run the quality check scripts in `/tests` to validate data integrity.

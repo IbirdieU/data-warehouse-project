@@ -12,7 +12,7 @@ Purpose:
 Execution Order (respects FK dependency chain):
     1. Clear   : DELETE fact_sales → DELETE dim_* → RESEED identities
     2. Dims     : dim_customers → dim_products → dim_sellers
-                  (dim_date is static; populated once at DDL time — skipped here)
+                  (dim_date is static; populated once on first execution — skipped on subsequent runs)
     3. Fact     : fact_sales  (requires all dims to be loaded first for SK lookups)
 
 Transaction Strategy:
@@ -95,8 +95,9 @@ BEGIN
     -- Range   : 2016-01-01 → 2020-12-31
     --
     -- dim_date is a static calendar table — its content never changes between
-    -- ELT runs. The IF NOT EXISTS guard skips the insert on subsequent runs,
-    -- making the procedure safe to re-execute without duplicating date rows.
+    -- ELT runs. It is populated once on the first execution of this procedure.
+    -- The IF NOT EXISTS guard skips the insert on subsequent runs, making the
+    -- procedure safe to re-execute without duplicating date rows.
     -- It is NOT deleted in the clear step above for the same reason.
     -- =========================================================================
     IF NOT EXISTS (SELECT 1 FROM gold.dim_date)
@@ -332,7 +333,7 @@ BEGIN
     -- Joins   :
     --   INNER  silver.olist_ord          → order header (status, dates, is_late)
     --   INNER  silver.olist_cust        → order-specific shipping location (Point-in-Time DD)
-    --   INNER  gold.dim_customers        → resolve customer_sk via customer_id = ord_cust_id
+    --   INNER  gold.dim_customers        → resolve customer_sk via customer_unique_id = cst_cust_unique_id
     --   INNER  gold.dim_products         → resolve product_sk  via product_id  = oi_prd_id
     --   INNER  gold.dim_sellers          → resolve seller_sk   via seller_id   = oi_sel_id
     --   INNER  gold.dim_date             → resolve purchase_date_sk via YYYYMMDD date_id
@@ -400,7 +401,7 @@ BEGIN
         c.cst_state                 AS shipping_state,
 
         -- Surrogate key lookups (resolved from freshly loaded dim tables above)
-        dc.customer_sk,             -- Resolved via: dim_customers.customer_id = ord_cust_id
+        dc.customer_sk,             -- Resolved via: dim_customers.customer_unique_id = cst_cust_unique_id
         dp.product_sk,              -- Resolved via: dim_products.product_id   = oi_prd_id
         ds.seller_sk,               -- Resolved via: dim_sellers.seller_id     = oi_sel_id
         dd.date_sk                  AS purchase_date_sk, -- Resolved via: dim_date.date_id = YYYYMMDD(ord_purchase_ts)
@@ -408,7 +409,7 @@ BEGIN
         -- Financial measures
         oi.oi_price                 AS price,
         oi.oi_freight_val           AS freight_value,
-        pay.total_payment_value,    -- Order-level total stamped on every item row (see payment CTE below)
+        pay.total_payment_value,    -- Order-level total stamped on every item row (see payment subquery below)
 
         -- Satisfaction measure
         rev.or_rev_score            AS review_score,
