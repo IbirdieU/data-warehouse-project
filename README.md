@@ -208,15 +208,15 @@ The following diagram provides a high-level view of the table structures across 
 
 We perform automated Data Quality audits on both the Silver and Gold layers to ensure data integrity and business logic compliance.
 
-### Check Categories
+### Data Quality Check Categories
 
-Every validation rule falls into one of three categories:
-
-| Category | Purpose |
-|---|---|
-| **Schema & Integrity** | Validates the structural health of each table — Primary Key uniqueness, NOT NULL constraints, Foreign Key referential integrity, and data type compliance. |
-| **Business Logic** | Verifies that data follows real-world e-commerce rules — e.g., delivery dates must not precede order dates, review scores must fall within 1–5, and financial measures must be non-negative. |
-| **Financial Reconciliation** | A cross-layer audit comparing Silver and Gold to ensure all financial aggregates (`SUM(Price + Freight)` vs. `SUM(Payments)`) are fully accounted for at the order level. |
+| Check Category | Definition | Project Application (Examples) |
+|---|---|---|
+| **Uniqueness** | Ensures no duplicate records exist within a table, preserving the defined grain and preventing inflated aggregations. | Primary Key uniqueness on `sale_sk`; composite grain check on `order_id` + `order_item_id` in `fact_sales`. |
+| **Completeness** | Verifies that mandatory fields are populated and critical business columns contain no NULL values. | `customer_unique_id` is never NULL in `dim_customers`; `price` and `freight_value` are present in `fact_sales`. |
+| **Integrity** | Validates referential integrity and relationships between tables across the Medallion layers (Bronze, Silver, Gold). | Every `customer_sk` in `fact_sales` has a matching record in `dim_customers`; no orphaned Foreign Keys across dimension lookups. |
+| **Validity** | Ensures data follows specific formats, business rules, and expected value ranges. | `price >= 0`; `review_score` between 1 and 5; purchase dates are not in the future; delivery dates are never before order dates. |
+| **Reconciliation** | High-level audit to ensure data balance between layers and cross-table financial consistency. | Row count comparison between `silver.olist_ord_item` and `gold.fact_sales`; `SUM(Price + Freight)` vs. `SUM(Payments)` at the order level. |
 
 ### Unified Reporting Schema
 
