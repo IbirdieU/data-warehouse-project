@@ -10,7 +10,7 @@ Data flows through three layers:
 |-------|--------|---------|
 | **Bronze** | `bronze` | Raw ingestion — data lands exactly as it arrives from the source. |
 | **Silver** | `silver` | Cleaned, typed, and standardized — the "single version of truth." |
-| **Gold** | `gold` | Star Schema optimized for analytics and Power BI dashboards. |
+| **Gold** | `gold` | Star Schema optimized for analytics and reporting. |
 
 The pipeline is fully automated through **Stored Procedures** with centralized logging, transaction safety, and built-in data quality checks.
 
@@ -22,7 +22,7 @@ Data moves through three layers following the **Medallion Architecture** pattern
 
 1. **Bronze** — Raw CSV files are bulk-loaded into SQL Server with no transformation. The data is an exact replica of the source.
 2. **Silver** — Stored Procedures clean, type-cast, standardize, and deduplicate the data. This layer is the single version of truth.
-3. **Gold** — Silver tables are joined and reshaped into a **Star Schema** optimized for Power BI and analytical queries.
+3. **Gold** — Silver tables are joined and reshaped into a **Star Schema** optimized for analytical queries and reporting.
 
 ![Data Flow Architecture](./docs/data_flow.png)
 
@@ -32,7 +32,7 @@ Data moves through three layers following the **Medallion Architecture** pattern
 
 The Gold layer implements a **Star Schema** following the Kimball methodology. A central `fact_sales` table (grain: one row per order item) connects to four dimension tables via surrogate key relationships.
 
-This design enables efficient slicing and dicing across customers, products, sellers, and time — providing fast, intuitive queries for BI tools like Power BI without requiring complex multi-table joins at report time.
+This design enables efficient slicing and dicing across customers, products, sellers, and time — providing fast, intuitive queries without requiring complex multi-table joins at query time.
 
 ![Gold Layer ERD](./docs/data_model.png)
 
@@ -83,7 +83,7 @@ SKs are system-generated identifiers created by the Data Warehouse itself. Omitt
 
 ## Data Catalog for Gold Layer
 
-The Gold Layer is the business-level data representation, structured using a **Star Schema** to support analytical queries and Power BI dashboards. It consists of **4 dimension tables** and **1 fact table**.
+The Gold Layer is the business-level data representation, structured using a **Star Schema** to support analytical queries and reporting. It consists of **4 dimension tables** and **1 fact table**.
 
 ### 1. **gold.dim_customers** (Identity Resolution)
 
@@ -260,7 +260,7 @@ data-warehouse-project/
 │   │   └── proc_load_silver.sql
 │   └── gold/
 │       ├── ddl_gold.sql       # Star Schema table definitions
-│       ├── ddl_gold_views.sql # Presentation views for Power BI
+│       ├── ddl_gold_views.sql # Presentation views for reporting
 │       └── proc_load_gold.sql
 └── tests/
     ├── quality_checks_silver.sql
@@ -286,4 +286,3 @@ data-warehouse-project/
 - **ELT:** T-SQL Stored Procedures
 - **Architecture:** Medallion (Bronze → Silver → Gold)
 - **Data Model:** Star Schema (Kimball methodology)
-- **Visualization:** Power BI (via Gold presentation views)
