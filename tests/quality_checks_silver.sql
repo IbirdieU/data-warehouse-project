@@ -696,8 +696,6 @@ WITH DQ_Report AS (
     -- Business Rule:
     --   For each order, the total paid (SUM of all payment methods) must match
     --   the total charged (SUM of item price + freight across all order items).
-    --   A tolerance of 0.01 absorbs float rounding; anything beyond that is a
-    --   genuine discrepancy in the source data.
     --
     -- FULL OUTER JOIN: catches orders that exist in one table but not the other
 
@@ -707,7 +705,7 @@ WITH DQ_Report AS (
         'Financial Reconciliation (Item vs Payment)',
         COUNT(*),
         CASE WHEN COUNT(*) > 0 THEN 'WARNING' ELSE 'PASS' END,
-        'Discrepancy > 0.01 detected between SUM(price + freight) and SUM(payment_value) per order' AS ErrorMsg
+        'Discrepancy != 0.00 detected between SUM(price + freight) and SUM(payment_value) per order' AS ErrorMsg
     FROM (
         -- Total item amount per order (price + freight for all items)
         SELECT
@@ -734,7 +732,7 @@ WITH DQ_Report AS (
         WHERE ABS(
                 ISNULL(item.total_item_amt,    0) -
                 ISNULL(pay.total_payment_amt,  0)
-              ) > 0.01
+              ) != 0.00
     ) mismatched_orders
 )
 

@@ -363,46 +363,66 @@ WITH DQ_Report AS (
 
     UNION ALL
 
-   -- Check 6.1: Financial Reconciliation — Item Totals vs Payment Totals (Silver to Gold Verification)
+   -- Check 6.1a: Orphan Records — one side is NULL (structural gap, not a price mismatch)
+    -- total_item_amt IS NULL  → order exists in payments but has no items (excluded from fact_sales by design)
+    -- total_payment_amt IS NULL → order has items but no payment record
     SELECT
-        'gold.fact_sales' AS TableName, -- หรือใช้ 'gold.cross_table' ตามที่คุณต้องการ
-        'Reconciliation'  AS CheckCategory,
-        'Financial Reconciliation (Item vs Payment)' AS CheckName,
-        COUNT(*)          AS FailedCount,
-        CASE 
-            WHEN COUNT(*) > 0 THEN 'WARNING' 
-            ELSE 'PASS' 
-        END AS Status,
-        'Found ' + CAST(COUNT(*) AS VARCHAR) + ' orders with discrepancy > 0.01 (includes orphans and rounding errors)' AS ErrorMsg
+        'gold.fact_sales'                       AS TableName,
+        'Reconciliation'                        AS CheckCategory,
+        'Orphan Records (Item or Payment Missing)' AS CheckName,
+        COUNT(*)                                AS FailedCount,
+        CASE WHEN COUNT(*) > 0 THEN 'WARNING' ELSE 'PASS' END AS Status,
+        'Found ' + CAST(COUNT(*) AS VARCHAR) + ' orders where items or payments have no matching counterpart' AS ErrorMsg
     FROM (
-        SELECT
-            COALESCE(item.order_id, pay.order_id) AS order_id,
-            item.total_item_amt,
-            pay.total_payment_amt
+        SELECT COALESCE(item.order_id, pay.order_id) AS order_id,
+               item.total_item_amt,
+               pay.total_payment_amt
         FROM (
-            -- Aggregate totals from Silver Items
-            SELECT
-                oi_ord_id AS order_id,
-                SUM(ISNULL(oi_price, 0) + ISNULL(oi_freight_val, 0)) AS total_item_amt
+            SELECT oi_ord_id AS order_id,
+                   SUM(ISNULL(oi_price, 0) + ISNULL(oi_freight_val, 0)) AS total_item_amt
             FROM silver.olist_ord_item
             GROUP BY oi_ord_id
         ) item
-        -- FULL OUTER JOIN to capture all records from both sides
         FULL OUTER JOIN (
-            -- Aggregate totals from Silver Payments
-            SELECT
-                op_ord_id AS order_id,
-                SUM(ISNULL(op_pay_val, 0)) AS total_payment_amt
+            SELECT op_ord_id AS order_id,
+                   SUM(ISNULL(op_pay_val, 0)) AS total_payment_amt
             FROM silver.olist_ord_pay
             GROUP BY op_ord_id
-        ) pay
-            ON item.order_id = pay.order_id
-        -- Logic to catch both missing links (Orphans) and price differences (Mismatches)
-        WHERE ABS(
-                ISNULL(item.total_item_amt, 0) - 
-                ISNULL(pay.total_payment_amt, 0)
-              ) > 0.01
-    ) mismatched_orders
+        ) pay ON item.order_id = pay.order_id
+        WHERE (item.total_item_amt IS NULL OR pay.total_payment_amt IS NULL)
+          AND ABS(ISNULL(item.total_item_amt, 0) - ISNULL(pay.total_payment_amt, 0)) != 0.00
+    ) orphan_records
+
+    UNION ALL
+
+    -- Check 6.1b: Financial Discrepancies — both sides exist but amounts differ
+    SELECT
+        'gold.fact_sales'                           AS TableName,
+        'Reconciliation'                            AS CheckCategory,
+        'Financial Discrepancy (Item vs Payment)'   AS CheckName,
+        COUNT(*)                                    AS FailedCount,
+        CASE WHEN COUNT(*) > 0 THEN 'WARNING' ELSE 'PASS' END AS Status,
+        'Found ' + CAST(COUNT(*) AS VARCHAR) + ' orders where item total ≠ payment total (includes 0.01 rounding)' AS ErrorMsg
+    FROM (
+        SELECT COALESCE(item.order_id, pay.order_id) AS order_id,
+               item.total_item_amt,
+               pay.total_payment_amt
+        FROM (
+            SELECT oi_ord_id AS order_id,
+                   SUM(ISNULL(oi_price, 0) + ISNULL(oi_freight_val, 0)) AS total_item_amt
+            FROM silver.olist_ord_item
+            GROUP BY oi_ord_id
+        ) item
+        FULL OUTER JOIN (
+            SELECT op_ord_id AS order_id,
+                   SUM(ISNULL(op_pay_val, 0)) AS total_payment_amt
+            FROM silver.olist_ord_pay
+            GROUP BY op_ord_id
+        ) pay ON item.order_id = pay.order_id
+        WHERE item.total_item_amt IS NOT NULL
+          AND pay.total_payment_amt IS NOT NULL
+          AND ABS(item.total_item_amt - pay.total_payment_amt) != 0.00
+    ) financial_discrepancies
 )
 SELECT * FROM DQ_Report
 ORDER BY

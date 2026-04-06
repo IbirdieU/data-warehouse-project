@@ -191,7 +191,7 @@ The Gold Layer is the business-level data representation, structured using a **S
 | total_payment_value | DECIMAL(18,2) | NULL       | Total amount paid for the entire order across all payment methods. **Note:** order-level metric at item grain — use `MAX()` when aggregating across items. |
 | review_score        | INT           | NULL       | Customer satisfaction rating (1-5). Deduplicated to one review per order. |
 | is_late             | BIT           | NULL       | Delivery flag: 1 = late, 0 = on time or early.                          |
-| delivery_lead_time  | INT           | NULL       | Days between purchase and delivery. NULL if not yet delivered or if the date was healed due to chronological impossibility. |
+| delivery_lead_time  | INT           | NULL       | NULL if not yet delivered or if delivery date precedes purchase date |
 | dwh_create_date     | DATETIME2     | NOT NULL   | Timestamp when this record was inserted into the gold layer.             |
 
 ---
@@ -216,19 +216,20 @@ Data Quality audits are performed on both the Silver and Gold layers to ensure d
 | **Completeness** | Verifies that mandatory fields are populated and critical business columns contain no NULL values. | `customer_unique_id` is never NULL in `dim_customers`; `price` and `freight_value` are present in `fact_sales`. |
 | **Integrity** | Validates referential integrity and relationships between tables across the Medallion layers (Bronze, Silver, Gold). | Every `customer_sk` in `fact_sales` has a matching record in `dim_customers`; no orphaned Foreign Keys across dimension lookups. |
 | **Validity** | Ensures data follows specific formats, business rules, and expected value ranges. | `price >= 0`; `review_score` between 1 and 5; purchase dates are not in the future; delivery dates are never before order dates. |
-| **Reconciliation** | High-level audit to ensure data balance between layers and cross-table financial consistency. | Row count comparison between `silver.olist_ord_item` and `gold.fact_sales`; `SUM(Price + Freight)` vs. `SUM(Payments)` at the order level. |
+| **Reconciliation** | High-level audit to ensure data balance between layers and cross-table financial consistency. | Row count comparison between `silver.olist_ord_item` and `gold.fact_sales`; financial totals split into two checks: **(1) Orphan Records** — orders present on only one side (items or payments); **(2) Financial Discrepancy** — orders where both sides exist but `SUM(Price + Freight) ≠ SUM(Payments)` (includes ±0.01 rounding). Both are `WARNING`. |
 
 ### Unified Reporting Schema
 
-Both audit scripts produce a unified result set with the following columns:
+Both audit scripts produce a unified result set. The Gold layer includes an additional `CheckCategory` column for grouping.
 
-| Column | Description |
-|---|---|
-| `TableName` | The table being audited. |
-| `CheckName` | Descriptive name of the validation rule. |
-| `FailedCount` | Number of records that triggered a flag. |
-| `Status` | Verdict: `PASS`, `WARNING`, or `FAIL`. |
-| `ErrorMsg` | Context about the detected issue. |
+| Column | Layer | Description |
+|---|---|---|
+| `TableName` | Both | The table being audited. |
+| `CheckCategory` | Gold only | DQ category: Completeness, Uniqueness, Integrity, Validity, or Reconciliation. |
+| `CheckName` | Both | Descriptive name of the validation rule. |
+| `FailedCount` | Both | Number of records that triggered a flag. |
+| `Status` | Both | Verdict: `PASS`, `WARNING`, or `FAIL`. |
+| `ErrorMsg` | Both | Context about the detected issue. |
 
 ### Silver Layer DQ Audit Results
 
@@ -236,6 +237,10 @@ Both audit scripts produce a unified result set with the following columns:
 ![Silver_DQ_Report_Part2](./docs/screenshots/silver_dq_p2.png)
 
 ### Gold Layer DQ Audit Results
+
+The reconciliation section contains two checks:
+- **Orphan Records** — orders present in items or payments but not both (structural gap, excluded from `fact_sales` by design).
+- **Financial Discrepancy** — orders where both sides exist but amounts differ; includes ±0.01 rounding cases and larger mismatches. Both checks are `WARNING`.
 
 ![Gold_DQ_Report](./docs/screenshots/gold_dq.png)
 
